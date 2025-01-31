@@ -1,15 +1,15 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
 from app.load import load_arrow_to_format
+from common.arrow_utils import ipc_to_table
 from prometheus_client import Counter, generate_latest
 import pyarrow as pa
-import pyarrow.ipc as pa_ipc
 import io
 import os
 
 bp = Blueprint('load-data', __name__)
 
-# Configurazione del logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s %(message)s',
@@ -40,7 +40,7 @@ def load_data():
         REQUEST_COUNTER.inc()
         logger.info("Received /load-data request.")
 
-        # Recupera il parametro 'format' dalla query string
+        # Catch the 'format' parameter from query string
         format_type = request.args.get('format', default=None, type=str)
         if not format_type or format_type.lower() not in ['csv', 'excel', 'json']:
             logger.error("Missing or unsupported 'format' parameter in request.")
@@ -52,7 +52,7 @@ def load_data():
 
         logger.info(f"Requested format for loading data: {format_type}")
 
-        # Recupera i dati binari dal corpo della richiesta
+        # Catch binary data from request
         ipc_data = request.get_data()
         if not ipc_data:
             logger.error("No data received in /load-data request.")
@@ -61,20 +61,10 @@ def load_data():
 
         logger.info(f"Received {len(ipc_data)} bytes of Arrow IPC data.")
 
-        # Deserialize Arrow Table dai dati IPC
-        try:
-            reader = pa_ipc.open_stream(pa.BufferReader(ipc_data))
-            arrow_table = reader.read_all()
-            logger.info(f"Deserialized Arrow Table with {arrow_table.num_rows} rows.")
-        except Exception as e:
-            logger.error(f"Failed to parse Arrow IPC data: {e}")
-            ERROR_COUNTER.inc()
-            return jsonify({
-                "status": "error",
-                "message": f"Failed to parse Arrow IPC data: {str(e)}"
-            }), 400
+        # Deserialize Arrow Table from IPC data
+        arrow_table = ipc_to_table(ipc_data)
 
-        # Converti la tabella Arrow nel formato desiderato
+        # Convert Arrow table in desired format
         try:
             converted_data = load_arrow_to_format(arrow_table, format_type)
         except Exception as e:
@@ -88,22 +78,22 @@ def load_data():
         SUCCESS_COUNTER.inc()
         logger.info(f"Successfully converted data to {format_type} format.")
 
-        # Definisci il percorso del file nel volume condiviso
-        output_dir = '/app/data/processed_data'  # Directory montata nel volume condiviso
-        os.makedirs(output_dir, exist_ok=True)  # Crea la directory se non esiste
+        # Define path file in shared volume
+        output_dir = '/app/data/processed_data'  # Mounted directory in shared volume
+        os.makedirs(output_dir, exist_ok=True)  # Create directory if not exists
 
-        # Definisci il nome del file in base al formato e alla data corrente
+        # Define the name of file based on format and current date
         from datetime import datetime
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         filename = f"cleaned_data_{timestamp}.{format_type.lower()}"
         file_path = os.path.join(output_dir, filename)
 
-        # Salva il file nel volume condiviso
+        # Save the file
         with open(file_path, 'wb') as f:
             f.write(converted_data)
         logger.info(f"Saved cleaned data to {file_path}")
 
-        # Restituisci un messaggio di conferma
+        # Return confirmation message
         return jsonify({
             "status": "success",
             "message": f"Data loaded successfully and saved to {file_path}"
@@ -120,6 +110,6 @@ def metrics():
     Prometheus monitoring endpoint.
 
     Returns:
-    - Metrics raccolte da Prometheus come testo semplice.
+    - Metrics catched from Prometheus in plain text.
     """
     return Response(generate_latest(), mimetype="text/plain")

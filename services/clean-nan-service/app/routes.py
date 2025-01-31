@@ -1,9 +1,8 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
-from app.clean import apply_transformations, arrow_to_ipc
+from app.clean import apply_transformations
 from prometheus_client import Counter, generate_latest
-import pyarrow as pa
-import pyarrow.ipc as pa_ipc
+from common.arrow_utils import ipc_to_table, table_to_ipc
 
 bp = Blueprint('clean-nan', __name__)
 
@@ -41,21 +40,14 @@ def clean_nan():
         logger.info(f"Received {len(ipc_data)} bytes of Arrow IPC data.")
 
         # Deserialize Arrow Table from IPC data
-        try:
-            reader = pa_ipc.open_stream(pa.BufferReader(ipc_data))
-            arrow_table = reader.read_all()
-            logger.info(f"Deserialized Arrow Table with {arrow_table.num_rows} rows.")
-        except Exception as e:
-            logger.error(f"Failed to parse Arrow IPC data: {e}")
-            ERROR_COUNTER.inc()
-            return jsonify({"status": "error", "message": f"Failed to parse Arrow IPC data: {str(e)}"}), 400
+        arrow_table = ipc_to_table(ipc_data)
 
         # Apply transformations
         cleaned_arrow_table = apply_transformations(arrow_table)
         logger.info(f"Applied transformations, resulting in {cleaned_arrow_table.num_rows} rows.")
 
         # Serialize the cleaned Arrow Table to IPC format
-        cleaned_ipc_data = arrow_to_ipc(cleaned_arrow_table)
+        cleaned_ipc_data = table_to_ipc(cleaned_arrow_table)
 
         SUCCESS_COUNTER.inc()
         logger.info("Successfully cleaned and serialized data.")

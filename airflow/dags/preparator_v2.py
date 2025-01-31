@@ -42,11 +42,11 @@ class Preparator:
         # Chiama extract-csv-service con JSON
         return self.run_service_json_in_ipc_out("extract_csv", {"client_id": client_id, "file_path": file_path})
 
-    def clean(self, ipc_data):
+    def clean_nan(self, ipc_data):
         # Chiama clean-nan-service con IPC
-        return self.run_service_ipc_in_ipc_out("clean", ipc_data)
+        return self.run_service_ipc_in_ipc_out("clean_nan", ipc_data)
 
-    def load(self, ipc_data, format='csv'):
+    def load_data(self, ipc_data, format='csv'):
         # Chiama load-data-service con IPC e parametro format nella query
         self.logger.info(f"Loading data with format: {format}")
         url = f"{self.services['load']}?format={format}"
@@ -81,3 +81,21 @@ class Preparator:
             "query": query
         }
         return self.run_service_json_in_ipc_out("extract_sql", json_data)
+    
+    def delete_columns(self, ipc_data, columns):
+        """
+        Chiama il microservizio delete-columns con Arrow IPC e query param columns
+        """
+        service_key = "delete_columns" 
+        url = self.services[service_key]
+        # Costruiamo la query string
+        import urllib.parse
+        qs = urllib.parse.urlencode({
+            "columns": ",".join(columns)
+        })
+        full_url = f"{url}?{qs}"
+
+        self.logger.info(f"Calling {service_key} with columns {columns}")
+        resp = self.session.post(full_url, data=ipc_data, headers={"Content-Type": "application/vnd.apache.arrow.stream"})
+        resp.raise_for_status()
+        return resp.content

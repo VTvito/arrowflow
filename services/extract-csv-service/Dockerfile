@@ -5,11 +5,11 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copy the requirements.txt file and install the dependencies
-COPY requirements.txt requirements.txt
+COPY extract-csv-service/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the code in the working dir
-COPY . .
+COPY extract-csv-service /app/
 
 # Expose the 5001 port -- this microservice used this port
 EXPOSE 5001

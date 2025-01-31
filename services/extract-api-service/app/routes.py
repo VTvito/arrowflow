@@ -1,6 +1,7 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
-from app.extract import extract_from_api, arrow_to_ipc
+from app.extract import extract_from_api
+from common.arrow_utils import table_to_ipc
 import os
 import pandas as pd
 import pyarrow as pa
@@ -53,9 +54,9 @@ def api_extraction():
         df = extract_from_api(api_url, api_params, auth_type, auth_value)
         logger.info(f"Extracted API data with {df.shape[0]} rows and {df.shape[1]} columns.")
 
-        # Converti in Arrow IPC
+        # Convert in Arrow IPC
         arrow_table = pa.Table.from_pandas(df)
-        ipc_data = arrow_to_ipc(arrow_table)
+        ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
         logger.info("Successfully extracted API data and converted to Arrow IPC.")

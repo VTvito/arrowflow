@@ -20,34 +20,35 @@ services:
     container_name: airflow
     depends_on:
     - postgres
+    - statsd-exporter
     volumes:
-      - etl-containers-shared-data:/app/data         # Volume condiviso fra i container per i dati
-      - etl-data-airflow:/opt/airflow                # Volume per la persistenza dei dati di Airflow
-      - ./airflow/dags:/opt/airflow/dags             # Monta la cartella locale 'dags' nel container
+      - etl-containers-shared-data:/app/data         # Shared Volume between containers for data
+      - etl-data-airflow:/opt/airflow                # Volume for persistence of Airflow data
+      - ./airflow/dags:/opt/airflow/dags             # Mount the local folder 'dags' in the container
     ports:
       - "8080:8080"
     networks:
       - etl-network
     restart: always
 
-  # exporter metriche Airflow -> Prometheus
+  # exporter metrics Airflow -> Prometheus
   statsd-exporter:
     image: prom/statsd-exporter:latest
     container_name: statsd-exporter
     depends_on:
     - postgres
     ports:
-      - "9102:9102"  # Porta per Prometheus
+      - "9102:9102"
     networks:
       - etl-network
 
-# monitoraggio microservizi
+#  Microservice monitoring
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     volumes:
-      - etl-prometheus-data:/etc/prometheus                         # Volume
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml  # Montaggio Folder su Volume
+      - etl-prometheus-data:/etc/prometheus                         
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml  
     ports:
       - "9090:9090"
     networks:
@@ -68,11 +69,11 @@ services:
       - etl-network
     restart: always
 
-# microservizi
+# Microservices
   extract-csv-service:
     build:
-      context: ./services/extract-csv-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: extract-csv-service/Dockerfile
     container_name: extract-csv-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -84,8 +85,8 @@ services:
 
   clean-nan-service:
     build:
-      context: ./services/clean-nan-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: clean-nan-service/Dockerfile
     container_name: clean-nan-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -97,8 +98,8 @@ services:
 
   get-columns-csv-service:
     build:
-      context: ./services/get-columns-csv-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: get-columns-csv-service/Dockerfile
     container_name: get-columns-csv-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -108,11 +109,11 @@ services:
       - etl-network
     restart: always
 
-  delete-columns-csv-service:
+  delete-columns-service:
     build:
-      context: ./services/delete-columns-csv-service
-      dockerfile: Dockerfile
-    container_name: delete-columns-csv-service
+      context: ./services
+      dockerfile: delete-columns-service/Dockerfile
+    container_name: delete-columns-service
     volumes:
       - etl-containers-shared-data:/app/data
     ports:
@@ -123,8 +124,8 @@ services:
 
   extract-sql-service:
     build:
-      context: ./services/extract-sql-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: extract-sql-service/Dockerfile
     container_name: extract-sql-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -136,8 +137,8 @@ services:
 
   extract-api-service:
     build:
-      context: ./services/extract-api-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: extract-api-service/Dockerfile
     container_name: extract-api-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -149,8 +150,8 @@ services:
 
   extract-excel-service:
     build:
-      context: ./services/extract-excel-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: extract-excel-service/Dockerfile
     container_name: extract-excel-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -162,8 +163,8 @@ services:
 
   join-datasets-csv-service:
     build:
-      context: ./services/join-datasets-csv-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: join-datasets-csv-service/Dockerfile
     container_name: join-datasets-csv-service
     volumes:
       - etl-containers-shared-data:/app/data
@@ -175,8 +176,8 @@ services:
 
   load-data-service:
     build:
-      context: ./services/load-data-service
-      dockerfile: Dockerfile
+      context: ./services
+      dockerfile: load-data-service/Dockerfile
     container_name: load-data-service
     volumes:
       - etl-containers-shared-data:/app/data

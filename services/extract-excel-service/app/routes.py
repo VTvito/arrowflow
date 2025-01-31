@@ -1,11 +1,12 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
+from common.arrow_utils import table_to_ipc
 from prometheus_client import Counter, generate_latest
 import os
 import pyarrow as pa
 import pandas as pd
 from datetime import datetime
-from app.extract import process_excel, arrow_to_ipc
+from app.extract import process_excel
 
 bp = Blueprint('extract-excel', __name__)
 
@@ -47,14 +48,15 @@ def extract_excel():
 
         logger.info(f"Client {client_id} extracting from {file_path}.")
 
-        # Processa il file Excel in un DataFrame
+        # Process file Excel in DataFrame
         df = process_excel(file_path)
         logger.info(f"Loaded Excel with {df.shape[0]} rows and {df.shape[1]} columns.")
 
-        # Converti DataFrame in Arrow Table
+        # Convert DataFrame in Arrow Table
         arrow_table = pa.Table.from_pandas(df)
-        # Converti Arrow Table in IPC
-        ipc_data = arrow_to_ipc(arrow_table)
+
+        # Convert Arrow Table in IPC
+        ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
         logger.info("Successfully extracted Excel data and converted to Arrow IPC.")

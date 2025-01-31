@@ -5,14 +5,20 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copy the requirements.txt file and install the dependencies
-COPY requirements.txt requirements.txt
+COPY delete-columns-service/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the code in the working dir
-COPY . .
+# Copy the folder common
+COPY common /app/common
 
-# Expose the 5006 port -- this microservice used this port
-EXPOSE 5006
+# Copy the code in the working dir
+COPY delete-columns-service /app/
+
+# Set PYTHONPATH to /app so that 'common' is importable as 'common'
+ENV PYTHONPATH="/app"
+
+# Expose the 5004 port -- this microservice used this port
+EXPOSE 5004
 
 # Command to start the microservice
 CMD ["python", "run.py"]

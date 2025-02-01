@@ -1,13 +1,9 @@
-# airflow/dags/etl_dag_preparator_v2.py
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models.param import Param
 from datetime import datetime
 import json
 import os
-
-# Import del Preparator (assicurati di avere PYTHONPATH settato correttamente
-# e di montare la cartella /opt/airflow/preparator con docker-compose)
 from preparator.preparator_v3 import Preparator
 
 default_args = {
@@ -16,34 +12,35 @@ default_args = {
     'retries': 1,
 }
 
+CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json config in Airflow container
+
 with DAG(
-    "etl_arrow_parametrized_preparator_v2",
+    "etl_arrow_parametrized_preparator_v3",
     default_args=default_args,
     schedule_interval=None,
     params={
-        "dataset_name": Param("demo_dataset", type="string"),
-        "file_path": Param(
-            "", 
-            type="string", 
-            description="Percorso del file CSV. Se lasciato vuoto verrà usato /app/data/<dataset_name>.csv"
+        "dataset_name": Param("demo_dataset", type="string", description="Name of dataset"),
+        "file_path": Param("", type="string",
+         description="Path of dataset file like /app/data/<dataset_name>.csv"
         ),
     },
 ) as dag:
 
     @task.python
     def run_pipeline(params: dict):
-        # Carichiamo i servizi dal JSON
-        with open("/opt/airflow/preparator/services_config.json") as f:
+        # Load services from JSON
+        with open(CONFIG_PATH) as f:
             services_config = json.load(f)
+
         prep = Preparator(services_config)
 
-        # Recuperiamo i parametri dal dict passato al task
+        # Get the parameters from the dict gived to the task
         dataset_name = params.get("dataset_name", "demo_dataset")
         file_path = params.get("file_path")
         if not file_path:
             file_path = f"/app/data/{dataset_name}.csv"
 
-        # Esecuzione della pipeline di esempio
+        # Exec. of pipeline
         ipc_data = prep.extract_excel(dataset_name=dataset_name, file_path=file_path)
         cleaned_data = prep.clean_nan(ipc_data, dataset_name=dataset_name)
         final_data = prep.load_data(cleaned_data, format="csv", dataset_name=dataset_name)

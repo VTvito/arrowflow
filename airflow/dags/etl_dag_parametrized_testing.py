@@ -4,9 +4,6 @@ from airflow.models.param import Param
 from datetime import datetime
 import json
 import os
-
-# Import del Preparator (assicurati di avere PYTHONPATH settato correttamente
-# e di montare la cartella /opt/airflow/preparator con docker-compose)
 from preparator.preparator_v2 import Preparator
 
 default_args = {
@@ -16,7 +13,7 @@ default_args = {
 }
 
 with DAG(
-    "etl_arrow_testing_preparator_v2",
+    "etl_arrow_parametrized_testing",
     default_args=default_args,
     schedule_interval=None,
     params={

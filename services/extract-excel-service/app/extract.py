@@ -1,7 +1,5 @@
 import pandas as pd
 import os
-import pyarrow as pa
-import pyarrow.ipc as pa_ipc
 import logging
 
 logger = logging.getLogger('extract-excel-service')

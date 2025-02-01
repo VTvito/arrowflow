@@ -1,7 +1,8 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
-from app.read import load_csv_to_arrow, arrow_to_ipc
+from app.read import load_csv_to_arrow
 from prometheus_client import Counter, generate_latest
+from common.arrow_utils import table_to_ipc
 
 bp = Blueprint('extract-csv', __name__)
 
@@ -48,7 +49,7 @@ def extract_csv():
             logger.warning("Extracted Arrow table has no rows.")
 
         # Serialize Arrow Table to IPC format
-        ipc_data = arrow_to_ipc(arrow_table)
+        ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
         logger.info(f"Successfully extracted and serialized data for client {client_id}.")

@@ -1,0 +1,9 @@
+{
+    "extract_csv": "http://extract-csv-service:5001/extract-csv",
+    "clean_nan": "http://clean-nan-service:5002/clean-nan",
+    "load_data": "http://load-data-service:5009/load-data",
+    "extract_excel": "http://extract-excel-service:5007/extract-excel",
+    "extract_api": "http://extract-api-service:5006/extract-api",
+    "extract_sql": "http://extract-sql-service:5005/extract-sql",
+    "delete_columns": "http://delete-columns-service:5004/delete-columns"
+}

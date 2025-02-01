@@ -3,6 +3,7 @@ import logging
 
 class Preparator:
     def __init__(self, services_config):
+        
         """
         services_config è un dizionario che mappa i nomi logici dei microservizi ai loro endpoint.
         Esempio:
@@ -49,7 +50,7 @@ class Preparator:
     def load_data(self, ipc_data, format='csv'):
         # Chiama load-data-service con IPC e parametro format nella query
         self.logger.info(f"Loading data with format: {format}")
-        url = f"{self.services['load']}?format={format}"
+        url = f"{self.services['load_data']}?format={format}"
         resp = self.session.post(url, data=ipc_data, headers={"Content-Type": "application/vnd.apache.arrow.stream"})
         resp.raise_for_status()
         # Se load restituisce IPC in caso di successo, lo ritorniamo

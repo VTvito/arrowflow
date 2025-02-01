@@ -1,7 +1,8 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
-from preparator_v2 import Preparator
+from preparator.preparator_v2 import Preparator
+import json
 
 default_args = {
     'owner': 'airflow',
@@ -9,17 +10,13 @@ default_args = {
     'retries': 1,
 }
 
+CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json config in Airflow container
+
 def run_pipeline(**kwargs):
-    # can be also an external .json file
-    services_config = {
-        "extract_csv": "http://extract-csv-service:5001/extract-csv",
-        "clean_nan": "http://clean-nan-service:5002/clean-nan",
-        "load": "http://load-data-service:5009/load-data",
-        "extract_excel": "http://extract-excel-service:5007/extract-excel",
-        "extract_api": "http://extract-api-service:5006/extract-api",
-        "extract_sql": "http://extract-sql-service:5005/extract-sql",
-        "delete_columns": "http://delete-columns-service:5004/delete-columns"
-    }
+    
+    # Loading configuration from JSON
+    with open(CONFIG_PATH) as f:
+        services_config = json.load(f)
 
     prep = Preparator(services_config)
 

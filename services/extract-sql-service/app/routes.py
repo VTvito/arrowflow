@@ -1,10 +1,11 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
-from app.extract import extract_from_sql, arrow_to_ipc
+from app.extract import extract_from_sql
 import os
 import pandas as pd
 import pyarrow as pa
 from prometheus_client import Counter, generate_latest
+from common.arrow_utils import table_to_ipc
 
 bp = Blueprint('extract-sql', __name__)
 
@@ -47,9 +48,9 @@ def extract_data():
         df = extract_from_sql(db_url, query)
         logger.info(f"Extracted SQL data with {df.shape[0]} rows and {df.shape[1]} columns.")
 
-        # Converti in Arrow IPC
+        # Convert in Arrow IPC
         arrow_table = pa.Table.from_pandas(df)
-        ipc_data = arrow_to_ipc(arrow_table)
+        ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
         logger.info("Successfully extracted SQL data and converted to Arrow IPC.")

@@ -1,6 +1,9 @@
 from flask import Blueprint, jsonify, request
 from app.columns import get_columns_from_csv
 import os
+from prometheus_client import Counter, generate_latest
+from common.arrow_utils import table_to_ipc, ipc_to_table
+from flask import Response
 
 bp = Blueprint('get-columns-csv', __name__)
 
@@ -58,8 +61,6 @@ def get_columns_file(client_id, dataset_name):
     
 
 # Endpoint per il monitoraggio
-from prometheus_client import Counter, generate_latest
-from flask import Response
 
 REQUEST_COUNTER = Counter('service_requests_total', 'Total number of requests for this service')
 

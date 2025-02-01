@@ -25,6 +25,7 @@ services:
       - etl-containers-shared-data:/app/data         # Shared Volume between containers for data
       - etl-data-airflow:/opt/airflow                # Volume for persistence of Airflow data
       - ./airflow/dags:/opt/airflow/dags             # Mount the local folder 'dags' in the container
+      - ./preparator:/opt/airflow/preparator         # Mount the local folder 'preparator' in the container
     ports:
       - "8080:8080"
     networks:
@@ -96,11 +97,11 @@ services:
       - etl-network
     restart: always
 
-  get-columns-csv-service:
+  get-columns-service:
     build:
       context: ./services
-      dockerfile: get-columns-csv-service/Dockerfile
-    container_name: get-columns-csv-service
+      dockerfile: get-columns-service/Dockerfile
+    container_name: get-columns-service
     volumes:
       - etl-containers-shared-data:/app/data
     ports:
@@ -161,11 +162,11 @@ services:
       - etl-network
     restart: always
 
-  join-datasets-csv-service:
+  join-datasets-service:
     build:
       context: ./services
-      dockerfile: join-datasets-csv-service/Dockerfile
-    container_name: join-datasets-csv-service
+      dockerfile: join-datasets-service/Dockerfile
+    container_name: join-datasets-service
     volumes:
       - etl-containers-shared-data:/app/data
     ports:

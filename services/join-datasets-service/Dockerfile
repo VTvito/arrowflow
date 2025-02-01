@@ -5,14 +5,20 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copy the requirements.txt file and install the dependencies
-COPY get-columns-csv-service/requirements.txt requirements.txt
+COPY join-datasets-service/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the code in the working dir
-COPY get-columns-csv-service /app/
+# Copy the folder common
+COPY common /app/common
 
-# Expose the 5003 port -- this microservice used this port
-EXPOSE 5003
+# Copy the code in the working dir
+COPY join-datasets-service /app/
+
+# Set PYTHONPATH to /app so that 'common' is importable as 'common'
+ENV PYTHONPATH="/app"
+
+# Expose the 5008 port -- this microservice used this port
+EXPOSE 5008
 
 # Command to start the microservice
 CMD ["python", "run.py"]

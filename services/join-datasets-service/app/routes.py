@@ -1,7 +1,11 @@
 from flask import Blueprint, jsonify, request
 from app.join import join_datasets
+from common.arrow_utils import table_to_ipc, ipc_to_table
 import os
 import pandas as pd
+from prometheus_client import Counter, generate_latest
+from flask import Response
+
 
 bp = Blueprint('join-datasets', __name__)
 
@@ -57,8 +61,6 @@ def get_joined_dataset(client_id, dataset_name):
     
 
 # Endpoint per il monitoraggio
-from prometheus_client import Counter, generate_latest
-from flask import Response
 
 REQUEST_COUNTER = Counter('service_requests_total', 'Total number of requests for this service')
 

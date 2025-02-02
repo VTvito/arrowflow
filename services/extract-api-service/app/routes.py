@@ -1,12 +1,14 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
+from prometheus_client import Counter, generate_latest
+import time
+import json
+import os
+from datetime import datetime
+
 from app.extract import extract_from_api
 from common.arrow_utils import table_to_ipc
-import os
-import pandas as pd
-import pyarrow as pa
-from datetime import datetime
-from prometheus_client import Counter, generate_latest
+from common.json_utils import NpEncoder
 
 bp = Blueprint('extract-api', __name__)
 
@@ -17,49 +19,73 @@ logging.basicConfig(
 )
 logger = logging.getLogger('extract-api-service')
 
-REQUEST_COUNTER = Counter('extract_api_requests_total', 'Total requests for the extract API service')
-SUCCESS_COUNTER = Counter('extract_api_success_total', 'Total successful requests for the extract API service')
-ERROR_COUNTER = Counter('extract_api_error_total', 'Total failed requests for the extract API service')
+REQUEST_COUNTER = Counter('extract_api_requests_total', 'Total requests for extract API service')
+SUCCESS_COUNTER = Counter('extract_api_success_total', 'Total successful requests for extract API service')
+ERROR_COUNTER = Counter('extract_api_error_total', 'Total failed requests for extract API service')
 
 @bp.route('/extract-api', methods=['POST'])
 def api_extraction():
     """
-    Input:
-      - client_id
-      - api_url
-      - api_params (dict)
-      - auth_type (string)
-      - auth_value (string)
-
-    Output:
-      - Arrow IPC data in case of success
-      - JSON error if something goes wrong
+    Input (JSON):
+    {
+      "dataset_name": "...",
+      "api_url": "...",
+      "api_params": {...},
+      "auth_type": "api_key" (optional),
+      "auth_value": "..." (optional)
+    }
+    Output: Arrow IPC
     """
+    start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
         logger.info("Received /extract-api request.")
 
         data = request.get_json()
-        client_id = data.get('client_id', 'client_id')
+        dataset_name = data.get('dataset_name', 'no_dataset')
         api_url = data.get('api_url')
         api_params = data.get('api_params', {})
         auth_type = data.get('auth_type')
         auth_value = data.get('auth_value')
 
         if not api_url:
-            logger.error("Missing 'api_url'.")
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'api_url' is required"}), 400
 
-        df = extract_from_api(api_url, api_params, auth_type, auth_value)
-        logger.info(f"Extracted API data with {df.shape[0]} rows and {df.shape[1]} columns.")
+        # Extract data from API
+        arrow_table = extract_from_api(api_url, api_params, auth_type, auth_value)
+        rows = arrow_table.num_rows
+        cols = arrow_table.num_columns
+        
+        if rows == 0:
+            logger.warning("Extracted Arrow table has no rows.")
 
-        # Convert in Arrow IPC
-        arrow_table = pa.Table.from_pandas(df)
+        # Serialize Arrow Table to Arrow IPC
         ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
-        logger.info("Successfully extracted API data and converted to Arrow IPC.")
+        logger.info(f"Extracted API data with {rows} rows, {cols} cols for dataset '{dataset_name}'.")
+
+        # Metadata
+        end_time = time.time()
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        dataset_folder = f"/app/data/{dataset_name}"
+        os.makedirs(dataset_folder, exist_ok=True)
+        metadata_dir = os.path.join(dataset_folder, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_path = os.path.join(metadata_dir, f"metadata_delete_columns_{timestamp}.json")
+        
+        metadata = {
+            "service_name": "extract-api",
+            "dataset_name": dataset_name,
+            "api_url": api_url,
+            "rows_out": rows,
+            "cols_out": cols,
+            "duration_sec": round(end_time - start_time, 3),
+            "timestamp": timestamp
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, cls=NpEncoder, indent=2)
 
         return Response(ipc_data, mimetype="application/vnd.apache.arrow.stream"), 200
 

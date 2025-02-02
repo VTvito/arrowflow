@@ -1,12 +1,15 @@
 import logging
 from flask import Blueprint, jsonify, request, Response
-from common.arrow_utils import table_to_ipc
 from prometheus_client import Counter, generate_latest
 import os
-import pyarrow as pa
 import pandas as pd
+import time
+import json
 from datetime import datetime
+
 from app.extract import process_excel
+from common.arrow_utils import table_to_ipc
+from common.json_utils import NpEncoder
 
 bp = Blueprint('extract-excel', __name__)
 
@@ -17,61 +20,74 @@ logging.basicConfig(
 )
 logger = logging.getLogger('extract-excel-service')
 
-REQUEST_COUNTER = Counter('extract_excel_requests_total', 'Total requests for the extract Excel service')
-SUCCESS_COUNTER = Counter('extract_excel_success_total', 'Total successful requests for the extract Excel service')
-ERROR_COUNTER = Counter('extract_excel_error_total', 'Total failed requests for the extract Excel service')
+REQUEST_COUNTER = Counter('extract_excel_requests_total', 'Total requests for extract Excel service')
+SUCCESS_COUNTER = Counter('extract_excel_success_total', 'Total successful requests for extract Excel service')
+ERROR_COUNTER = Counter('extract_excel_error_total', 'Total failed requests for extract Excel service')
 
 @bp.route('/extract-excel', methods=['POST'])
 def extract_excel():
     """
-    API Endpoint to extract data from an Excel file and return Arrow IPC.
     Input: JSON with:
-      - client_id (str)
-      - file_path (str): path to the Excel file
-
-    Output:
-      - On success: Arrow IPC binary (application/vnd.apache.arrow.stream)
-      - On error: JSON {status: error, message: ...}
+      - dataset_name
+      - file_path (Excel .xls/.xlsx)
+    Output: Arrow IPC
     """
+    start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
         logger.info("Received /extract-excel request.")
 
         data = request.get_json()
-        client_id = data.get('client_id', 'client_id')
+        dataset_name = data.get('dataset_name', 'no_dataset')
         file_path = data.get('file_path')
-
         if not file_path:
-            logger.error("Missing 'file_path' in request.")
+            logger.error("Missing 'file_path' param.")
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'file_path' is required"}), 400
 
-        logger.info(f"Client {client_id} extracting from {file_path}.")
+        logger.info(f"Extracting from Excel: {file_path} for dataset '{dataset_name}'")
 
-        # Process file Excel in DataFrame
-        df = process_excel(file_path)
-        logger.info(f"Loaded Excel with {df.shape[0]} rows and {df.shape[1]} columns.")
+        # Load Excel into Arrow Table
+        arrow_table = process_excel(file_path)
+        rows = arrow_table.num_rows
+        cols = arrow_table.num_columns
 
-        # Convert DataFrame in Arrow Table
-        arrow_table = pa.Table.from_pandas(df)
+        if rows == 0:
+            logger.warning("Extracted Arrow table has no rows.")
 
-        # Convert Arrow Table in IPC
+        # Serialize Arrow Table to Arrow IPC
         ipc_data = table_to_ipc(arrow_table)
 
         SUCCESS_COUNTER.inc()
-        logger.info("Successfully extracted Excel data and converted to Arrow IPC.")
+        logger.info(f"Successfully extracted Excel with {rows} rows, {cols} cols for dataset '{dataset_name}'.")
+
+        # Metadata
+        end_time = time.time()
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        dataset_folder = f"/app/data/{dataset_name}"
+        os.makedirs(dataset_folder, exist_ok=True)
+        metadata_dir = os.path.join(dataset_folder, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_path = os.path.join(metadata_dir, f"metadata_extract_excel_{timestamp}.json")
+
+        metadata = {
+            "service_name": "extract-excel",
+            "dataset_name": dataset_name,
+            "file_path": file_path,
+            "rows_out": rows,
+            "cols_out": cols,
+            "duration_sec": round(end_time - start_time,3),
+            "timestamp": timestamp
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, cls=NpEncoder, indent=2)
 
         return Response(ipc_data, mimetype="application/vnd.apache.arrow.stream"), 200
-
     except Exception as e:
         ERROR_COUNTER.inc()
         logger.exception("Error during /extract-excel processing.")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @bp.route('/metrics', methods=['GET'])
 def metrics():
-    """
-    Prometheus monitoring endpoint.
-    """
     return Response(generate_latest(), mimetype="text/plain")

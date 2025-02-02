@@ -7,17 +7,8 @@ logger = logging.getLogger('load-data-service')
 
 def load_arrow_to_format(arrow_table, format_type):
     """
-    Converts an Arrow Table to the specified format.
-
-    Args:
-        arrow_table (pyarrow.Table): Table to convert.
-        format_type (str): Desired format ('csv', 'excel', 'json').
-
-    Returns:
-        bytes: Converted data in the desired format.
-
-    Raises:
-        ValueError: If format_type is unsupported.
+    Converts an Arrow Table to the specified format ('csv','excel','json').
+    Returns bytes of the converted data.
     """
     try:
         df = arrow_table.to_pandas()
@@ -41,9 +32,8 @@ def load_arrow_to_format(arrow_table, format_type):
             return output.encode('utf-8')
 
         else:
-            logger.error(f"Unsupported format_type: {format_type}")
-            raise ValueError(f"Unsupported format_type: {format_type}")
-
+            logger.error(f"Unsupported format: {format_type}")
+            raise ValueError(f"Unsupported format: {format_type}")
     except Exception as e:
-        logger.error(f"Failed to convert data to format {format_type}: {e}")
+        logger.error(f"Failed to convert data: {e}")
         raise

@@ -20,9 +20,8 @@ with DAG(
     schedule_interval=None,
     params={
         "dataset_name": Param("demo_dataset", type="string", description="Name of dataset"),
-        "file_path": Param("", type="string",
-         description="Path of dataset file like /app/data/<dataset_name>.csv"
-        ),
+        "file_path": Param("", type="string", description="Path of dataset file like /app/data/<dataset_name>.*" ),
+        "output_format": Param("csv", type="string", description="Output format of the dataset (csv, xlsx, etc.)"),
     },
 ) as dag:
 
@@ -37,13 +36,14 @@ with DAG(
         # Get the parameters from the dict gived to the task
         dataset_name = params.get("dataset_name", "demo_dataset")
         file_path = params.get("file_path")
+        output_format = params.get("output_format", "csv")
         if not file_path:
             file_path = f"/app/data/{dataset_name}.csv"
 
         # Exec. of pipeline
         ipc_data = prep.extract_excel(dataset_name=dataset_name, file_path=file_path)
         cleaned_data = prep.clean_nan(ipc_data, dataset_name=dataset_name)
-        final_data = prep.load_data(cleaned_data, format="csv", dataset_name=dataset_name)
+        final_data = prep.load_data(cleaned_data, format=output_format, dataset_name=dataset_name)
 
         print(f"Pipeline for dataset '{dataset_name}' completed, using file '{file_path}'.")
 

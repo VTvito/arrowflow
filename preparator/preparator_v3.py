@@ -116,4 +116,4 @@ class Preparator:
         """
         Calls load-data-service with Arrow IPC + query param format & dataset_name.
         """
-        return self.run_service_ipc_in_ipc_out("load", ipc_data, params={"format": format, "dataset_name": dataset_name})
+        return self.run_service_ipc_in_ipc_out("load_data", ipc_data, params={"format": format, "dataset_name": dataset_name})

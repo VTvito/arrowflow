@@ -1,4 +1,5 @@
 import pandas as pd
+import pyarrow as pa
 import requests
 import logging
 
@@ -23,8 +24,12 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
         response.raise_for_status()
 
         # Convert the response in DataFrame
-        data = pd.json_normalize(response.json())
-        return data
+        df = pd.json_normalize(response.json())
 
+        # Convert pandas DataFrame to Arrow Table
+        arrow_table = pa.Table.from_pandas(df)
+        logger.info(f"Converted DataFrame to Arrow Table with {arrow_table.num_rows} rows, {arrow_table.num_columns} columns.")
+        return arrow_table
+    
     except requests.RequestException as e:
         raise ValueError(f"API Error: {str(e)}")

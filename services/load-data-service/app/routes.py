@@ -2,24 +2,22 @@ import logging
 from flask import Blueprint, jsonify, request, Response
 from app.load import load_arrow_to_format
 from common.arrow_utils import ipc_to_table
+from common.json_utils import NpEncoder
 from prometheus_client import Counter, generate_latest
-import pyarrow as pa
-import io
 import os
+import time
+import json
+from datetime import datetime
 
 bp = Blueprint('load-data', __name__)
 
-# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)s %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger('load-data-service')
 
-# Monitoring counters
 REQUEST_COUNTER = Counter('load_data_requests_total', 'Total requests for the load data service')
 SUCCESS_COUNTER = Counter('load_data_success_total', 'Total successful requests for the load data service')
 ERROR_COUNTER = Counter('load_data_error_total', 'Total failed requests for the load data service')
@@ -29,30 +27,32 @@ def load_data():
     """
     API Endpoint to load cleaned data into a specified format.
 
-    Request Body:
-    - Arrow IPC data in binary format.
-    - format (str): Desired output format ('csv', 'excel', 'json').
-
-    Returns:
-    - Status message.
+    Query params:
+      - format (str): desired output format ('csv','excel','json')
+      - dataset_name (str, optional): name of dataset for metadata
+    Body:
+      - Arrow IPC in binary
     """
+    start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
         logger.info("Received /load-data request.")
 
-        # Catch the 'format' parameter from query string
+        # get 'format' and 'dataset_name' from query
         format_type = request.args.get('format', default=None, type=str)
+        dataset_name = request.args.get('dataset_name', 'no_dataset')
+
         if not format_type or format_type.lower() not in ['csv', 'excel', 'json']:
-            logger.error("Missing or unsupported 'format' parameter in request.")
+            logger.error("Missing or unsupported 'format' parameter.")
             ERROR_COUNTER.inc()
             return jsonify({
                 "status": "error",
-                "message": "Parameter 'format' is required and must be one of ['csv', 'excel', 'json']"
+                "message": "Parameter 'format' must be one of ['csv','excel','json']"
             }), 400
 
         logger.info(f"Requested format for loading data: {format_type}")
 
-        # Catch binary data from request
+        # get Arrow IPC
         ipc_data = request.get_data()
         if not ipc_data:
             logger.error("No data received in /load-data request.")
@@ -61,44 +61,56 @@ def load_data():
 
         logger.info(f"Received {len(ipc_data)} bytes of Arrow IPC data.")
 
-        # Deserialize Arrow Table from IPC data
+        # Deserialize Arrow table
         arrow_table = ipc_to_table(ipc_data)
+        rows_in = arrow_table.num_rows
+        cols_in = arrow_table.num_columns
 
-        # Convert Arrow table in desired format
-        try:
-            converted_data = load_arrow_to_format(arrow_table, format_type)
-        except Exception as e:
-            logger.error(f"Conversion to format {format_type} failed: {e}")
-            ERROR_COUNTER.inc()
-            return jsonify({
-                "status": "error",
-                "message": f"Conversion failed: {str(e)}"
-            }), 500
+        # Convert to desired format
+        from app.load import load_arrow_to_format
+        converted_data = load_arrow_to_format(arrow_table, format_type)
 
         SUCCESS_COUNTER.inc()
         logger.info(f"Successfully converted data to {format_type} format.")
 
-        # Define path file in shared volume
-        output_dir = '/app/data/processed_data'  # Mounted directory in shared volume
-        os.makedirs(output_dir, exist_ok=True)  # Create directory if not exists
+        # Save processed file
+        dataset_folder = f"/app/data/{dataset_name}"
+        os.makedirs(dataset_folder, exist_ok=True)
+        processed_dir = os.path.join(dataset_folder, "processed")
+        os.makedirs(processed_dir, exist_ok=True)
 
-        # Define the name of file based on format and current date
-        from datetime import datetime
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-        filename = f"cleaned_data_{timestamp}.{format_type.lower()}"
-        file_path = os.path.join(output_dir, filename)
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        filename = f"step_load_{timestamp}.{format_type.lower()}"
+        file_path = os.path.join(processed_dir, filename)
 
-        # Save the file
         with open(file_path, 'wb') as f:
             f.write(converted_data)
-        logger.info(f"Saved cleaned data to {file_path}")
+        logger.info(f"Saved data to {file_path}")
 
-        # Return confirmation message
+        # Metadata
+        end_time = time.time()
+        metadata_dir = os.path.join(dataset_folder, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_file = os.path.join(metadata_dir, f"metadata_load_{timestamp}.json")
+
+        metadata = {
+            "service_name": "load-data",
+            "dataset_name": dataset_name,
+            "rows_in": rows_in,
+            "cols_in": cols_in,
+            "format": format_type,
+            "output_file": file_path,
+            "duration_sec": round(end_time - start_time, 3),
+            "timestamp": timestamp
+        }
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, cls=NpEncoder, indent=2)
+        logger.info(f"Metadata saved to {metadata_file}")
+
         return jsonify({
             "status": "success",
             "message": f"Data loaded successfully and saved to {file_path}"
         }), 200
-
     except Exception as e:
         ERROR_COUNTER.inc()
         logger.exception("Error during /load-data processing.")
@@ -107,9 +119,6 @@ def load_data():
 @bp.route('/metrics', methods=['GET'])
 def metrics():
     """
-    Prometheus monitoring endpoint.
-
-    Returns:
-    - Metrics catched from Prometheus in plain text.
+    Prometheus monitoring endpoint
     """
     return Response(generate_latest(), mimetype="text/plain")

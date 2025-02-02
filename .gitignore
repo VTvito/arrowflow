@@ -1,5 +1,6 @@
 airflow/logs/
 airflow/dags/__pycache__/
+preparator/__pycache__/
 
 services/clean-nan-service/app/__pycache__/
 services/delete-columns-csv-service/app/__pycache__/

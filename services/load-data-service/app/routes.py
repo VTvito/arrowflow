@@ -42,12 +42,12 @@ def load_data():
         format_type = request.args.get('format', default=None, type=str)
         dataset_name = request.args.get('dataset_name', 'no_dataset')
 
-        if not format_type or format_type.lower() not in ['csv', 'excel', 'json']:
+        if not format_type or format_type.lower() not in ['csv', 'xlsx', 'xls' 'json']:
             logger.error("Missing or unsupported 'format' parameter.")
             ERROR_COUNTER.inc()
             return jsonify({
                 "status": "error",
-                "message": "Parameter 'format' must be one of ['csv','excel','json']"
+                "message": "Parameter 'format' must be one of ['csv', 'xlsx', 'xls' 'json']"
             }), 400
 
         logger.info(f"Requested format for loading data: {format_type}")

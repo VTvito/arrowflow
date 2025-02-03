@@ -19,7 +19,7 @@ def load_arrow_to_format(arrow_table, format_type):
             logger.info("Converted DataFrame to CSV format.")
             return output.encode('utf-8')
 
-        elif format_type.lower() == 'excel':
+        elif format_type.lower() == 'xlsx' or format_type.lower() == 'xls':
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')

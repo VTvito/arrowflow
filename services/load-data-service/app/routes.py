@@ -67,7 +67,6 @@ def load_data():
         cols_in = arrow_table.num_columns
 
         # Convert to desired format
-        from app.load import load_arrow_to_format
         converted_data = load_arrow_to_format(arrow_table, format_type)
 
         SUCCESS_COUNTER.inc()

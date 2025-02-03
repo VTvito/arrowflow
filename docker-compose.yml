@@ -188,6 +188,32 @@ services:
       - etl-network
     restart: always
 
+  data-quality-service:
+    build:
+      context: ./services
+      dockerfile: data-quality-service/Dockerfile
+    container_name: data-quality-service
+    volumes:
+      - etl-containers-shared-data:/app/data
+    ports:
+      - "5010:5010"
+    networks:
+      - etl-network
+    restart: always
+
+  outlier-detection-service:
+    build:
+      context: ./services
+      dockerfile: outlier-detection-service/Dockerfile
+    container_name: outlier-detection-service
+    volumes:
+      - etl-containers-shared-data:/app/data
+    ports:
+      - "5011:5011"
+    networks:
+      - etl-network
+    restart: always
+
 
 networks:
   etl-network:

@@ -3,14 +3,16 @@ import numpy as np
 
 class NpEncoder(json.JSONEncoder):
     """
-    JSON Encoder convert automatically NumPy types
-    (int, float, array, ecc.) in type Python standard (int, float, list).
+    JSON Encoder che converte automaticamente i tipi NumPy
+    (int, float, array, bool, ecc.) nei corrispondenti tipi Python standard.
     """
     def default(self, obj):
-        if isinstance(obj, (np.int_, np.int64, np.int32)):
+        if isinstance(obj, np.integer):
             return int(obj)
-        elif isinstance(obj, (np.float_, np.float32, np.float64)):
+        elif isinstance(obj, np.floating):
             return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         # Let the base class default method

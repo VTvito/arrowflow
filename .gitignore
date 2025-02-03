@@ -10,3 +10,7 @@ services/extract-sql-service/app/__pycache__/
 services/extract-excel-service/app/__pycache__/
 services/extract-api-service/app/__pycache__/
 services/extract-api-service/app/__pycache__/
+
+athlete_events.csv
+test_dataset.csv
+test_db.xlsx

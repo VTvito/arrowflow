@@ -1,22 +1,30 @@
 import requests
 import logging
 import urllib.parse
+import json
 
 class Preparator:
     def __init__(self, services_config):
         """
-        services_config is a dict like:
-        {
-            "extract_csv": "http://extract-csv-service:5001/extract-csv",
-        }
+        Initialize the Preparator with a configuration dictionary mapping service keys to URLs (services_config.json)
+          {
+              "extract_csv": "http://extract-csv-service:5001/extract-csv",
+          }
         """
+
         self.services = services_config
         self.logger = logging.getLogger("Preparator")
         self.session = requests.Session()
 
     def run_service_json_in_ipc_out(self, service_key, json_data):
         """
-        Calls a service that accepts JSON input, returns Arrow IPC on success.
+        - Logs the service call
+        - Makes an HTTP POST request to the service endpoint corresponding to service_key
+        - Returns the response content (expected to be Arrow IPC bytes)
+
+        An helper function that call a microservice that accept JSON in input and returns data in Arrow IPC format       
+        Allow to easily call microservices without repeating the HTTP request logic.
+        
         """
         self.logger.info(f"Calling {service_key} with JSON data: {json_data}")
         url = self.services[service_key]
@@ -26,14 +34,18 @@ class Preparator:
     
     def run_service_ipc_in_ipc_out(self, service_key, ipc_data, params=None):
         """
-        Calls a service that accepts Arrow IPC and returns Arrow IPC.
-        Optionally pass query parameters (dict) in `params`.
+        - Logs the service call        
+        - Optionally appends query parameters to the URL if provided
+        - Makes an HTTP POST request with the IPC data
+        - Returns the response content (expected to be Arrow IPC bytes)
+
+        Call a microservice that accepts Arrow IPC data as input and returns Arrow IPC data
         """
         self.logger.info(f"Calling {service_key} with IPC data size={len(ipc_data)} bytes")
         url = self.services[service_key]
 
         if params:
-            qs = urllib.parse.urlencode(params)  # e.g. {"dataset_name": "...", "format": "..."}
+            qs = urllib.parse.urlencode(params)  # e.g., {"dataset_name": "...", "format": "..."}
             url = f"{url}?{qs}"
 
         resp = self.session.post(
@@ -48,8 +60,9 @@ class Preparator:
 
     def extract_csv(self, dataset_name, file_path):
         """
-        Calls extract-csv-service with JSON: { "dataset_name": ..., "file_path": ... }
-        Returns Arrow IPC.
+        Call the extract-csv-service with JSON data:
+          { "dataset_name": ..., "file_path": ... }
+        Returns Arrow IPC
         """
         return self.run_service_json_in_ipc_out("extract_csv", {
             "dataset_name": dataset_name,
@@ -58,7 +71,7 @@ class Preparator:
 
     def extract_excel(self, dataset_name, file_path):
         """
-        Calls extract-excel-service with JSON.
+        Call the extract-excel-service with JSON data
         """
         return self.run_service_json_in_ipc_out("extract_excel", {
             "dataset_name": dataset_name,
@@ -67,7 +80,7 @@ class Preparator:
 
     def extract_api(self, dataset_name, api_url, api_params={}, auth_type=None, auth_value=None):
         """
-        Calls extract-api-service with JSON, returning Arrow IPC.
+        Call the extract-api-service with JSON data and return Arrow IPC
         """
         json_data = {
             "dataset_name": dataset_name,
@@ -83,7 +96,7 @@ class Preparator:
 
     def extract_sql(self, dataset_name, db_url, query):
         """
-        Calls extract-sql-service with JSON, returning Arrow IPC.
+        Call the extract-sql-service with JSON data and return Arrow IPC
         """
         json_data = {
             "dataset_name": dataset_name,
@@ -92,28 +105,58 @@ class Preparator:
         }
         return self.run_service_json_in_ipc_out("extract_sql", json_data)
 
-    ### Transform microservices
+    ### Transformation microservices
 
     def clean_nan(self, ipc_data, dataset_name="default_dataset"):
         """
-        Calls clean-nan-service with Arrow IPC + query param dataset_name.
+        Call the clean-nan-service with Arrow IPC data and a query parameter for dataset_name
         """
         return self.run_service_ipc_in_ipc_out("clean_nan", ipc_data, params={"dataset_name": dataset_name})
 
     def delete_columns(self, ipc_data, columns, dataset_name="default_dataset"):
         """
-        Calls delete-columns-service with Arrow IPC + query param columns and dataset_name.
+        Call the delete-columns-service with Arrow IPC data and query parameters for columns and dataset_name
         """
         params_dict = {
             "columns": ",".join(columns),
             "dataset_name": dataset_name
         }
         return self.run_service_ipc_in_ipc_out("delete_columns", ipc_data, params=params_dict)
+    
+    def detect_outliers(self, ipc_data, dataset_name="default_dataset", column="value", z_threshold=3.0):
+        """
+        Calls outlier-detection-service with Arrow IPC and query params:
+        dataset_name, column, z_threshold.
+        Returns the cleaned Arrow IPC.
+        """
+        params = {
+            "dataset_name": dataset_name,
+            "column": column,
+            "z_threshold": z_threshold
+        }
+        return self.run_service_ipc_in_ipc_out("outlier_detection", ipc_data, params=params)
+
+    # Data Quality Assessment
+    def check_quality(self, ipc_data, dataset_name="default_dataset", rules=None):
+        """
+        Call the data-quality-service with Arrow IPC data, along with a query parameter for dataset_name
+        and an optional 'rules_json' parameter for quality rules
+        """
+        if rules is None:
+            rules_str = "{}"
+        else:
+            rules_str = json.dumps(rules)
+
+        params = {
+            "dataset_name": dataset_name,
+            "rules_json": rules_str
+        }
+        return self.run_service_ipc_in_ipc_out("data_quality", ipc_data, params=params)
 
     ### Load microservice
 
     def load_data(self, ipc_data, format='csv', dataset_name="default_dataset"):
         """
-        Calls load-data-service with Arrow IPC + query param format & dataset_name.
+        Call the load-data-service with Arrow IPC data and query parameters for format and dataset_name
         """
         return self.run_service_ipc_in_ipc_out("load_data", ipc_data, params={"format": format, "dataset_name": dataset_name})

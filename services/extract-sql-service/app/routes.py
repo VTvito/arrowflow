@@ -26,6 +26,7 @@ ERROR_COUNTER = Counter('extract_sql_error_total', 'Total failed requests for th
 @bp.route('/extract-sql', methods=['POST'])
 def extract_data():
     """
+    API Endpoint to extract data from a SQL database and serialize it into Arrow IPC format.
     Input (JSON):
     {
       "dataset_name": "...",

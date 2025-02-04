@@ -26,16 +26,13 @@ ERROR_COUNTER = Counter('extract_csv_error_total', 'Total failed requests for th
 @bp.route('/extract-csv', methods=['POST'])
 def extract_csv():
     """
-    API Endpoint to extract data from a CSV file and serialize it into Apache Arrow IPC format.
-
+    API Endpoint to extract data from a CSV file and serialize it into Arrow IPC format.
     Input (JSON):
     {
       "dataset_name": "...",
       "file_path": "/app/data/somefile.csv"
     }
-
     Output: Arrow IPC
-    Side-effect: saves metadata in /app/data/metadata_logs/<dataset_name>/metadata_extract_csv_...
     """
     start_time = time.time()
     try:

@@ -11,6 +11,4 @@ services/extract-excel-service/app/__pycache__/
 services/extract-api-service/app/__pycache__/
 services/extract-api-service/app/__pycache__/
 
-athlete_events.csv
-test_db.xlsx
-test_db.csv
+otherfiles/

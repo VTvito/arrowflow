@@ -1,3 +1,4 @@
+# This version of the Preparator class uses query parameters to pass the parameters to the microservices in the URL of the HTTP request.
 import requests
 import logging
 import urllib.parse

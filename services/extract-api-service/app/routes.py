@@ -26,6 +26,7 @@ ERROR_COUNTER = Counter('extract_api_error_total', 'Total failed requests for ex
 @bp.route('/extract-api', methods=['POST'])
 def api_extraction():
     """
+    API Endpoint to extract data from an API.
     Input (JSON):
     {
       "dataset_name": "...",
@@ -34,7 +35,7 @@ def api_extraction():
       "auth_type": "api_key" (optional),
       "auth_value": "..." (optional)
     }
-    Output: Arrow IPC
+    Output: Arrow IPC 
     """
     start_time = time.time()
     try:

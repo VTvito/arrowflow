@@ -12,7 +12,7 @@ default_args = {
 }
 
 dag = DAG(
-    'etl_arrow_pipeline',
+    'etl_arrow_xcom_old',
     default_args=default_args,
     description='ETL Pipeline with Apache Arrow',
     schedule_interval=None,  # Trigger manuale

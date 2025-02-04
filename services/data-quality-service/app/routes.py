@@ -21,9 +21,9 @@ ERROR_COUNTER = Counter('data_quality_error_total', 'Total failed requests for t
 @bp.route('/data-quality', methods=['POST'])
 def data_quality():
     """
-    Data Quality microservice:
+    Data Quality API Endpoint:
       - Receives Arrow IPC data in the request body.
-      - Optionally receives a JSON string of 'rules' via the query parameter 'rules_json'.
+      - Optionally receives a JSON string of 'rules' in header.
       - Performs basic quality checks and logs the results to a JSON metadata file.
       - Returns the same Arrow IPC data unchanged.
     """
@@ -32,15 +32,16 @@ def data_quality():
         REQUEST_COUNTER.inc()
         logger.info("Received /data-quality request.")
 
-        # Retrieve quality rules from the query parameter, 'rules_json' (e.g., ?rules_json={"min_rows":1,"check_null_ratio":true}).
-        raw_rules = request.args.get('rules_json', '{}')
+        # Read the custom header 'X-Params'
+        raw_header = request.headers.get('X-Params', '{}')
         try:
-            rules = json.loads(raw_rules)
+            header_data = json.loads(raw_header)
         except json.JSONDecodeError:
-            rules = {}
+            header_data = {}
 
-        # Retrieve the dataset name from the query string.
-        dataset_name = request.args.get('dataset_name', 'no_dataset')
+        # Extract dataset_name and rules from dict
+        dataset_name = header_data.get('dataset_name', 'no_dataset')
+        rules = header_data.get('rules', {})
 
         # Retrieve the Arrow IPC bytes from the request body.
         ipc_data = request.get_data()

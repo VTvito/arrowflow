@@ -15,7 +15,7 @@ default_args = {
 CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json config in Airflow container
 
 with DAG(
-    "etl_arrow_parametrized_preparator_v3",
+    "parametrized_preparator_v3",
     default_args=default_args,
     schedule_interval=None,
     params={

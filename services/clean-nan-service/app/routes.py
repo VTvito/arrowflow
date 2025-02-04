@@ -19,12 +19,28 @@ ERROR_COUNTER = Counter('clean_nan_error_total', 'Total failed requests for the 
 
 @bp.route('/clean-nan', methods=['POST'])
 def clean_nan():
+    """
+    API Endpoint to clean NaN values from Arrow IPC data.
+    - Body: Arrow IPC in binary
+    - Header: 'X-Params' for dataset_name
+    - Output: Arrow IPC with NaN values removed.
+    """
+    
     start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
         logger.info("Received /clean-nan request.")
 
-        dataset_name = request.args.get('dataset_name', 'no_dataset')
+        # Read the custom header 'X-Params'
+        raw_header = request.headers.get('X-Params', '{}')
+        try:
+            params = json.loads(raw_header)
+        except json.JSONDecodeError:
+            params = {}
+
+        # Now extract dataset_name from that dict
+        dataset_name = params.get('dataset_name', 'no_dataset')
+
         ipc_data = request.get_data()
         if not ipc_data:
             ERROR_COUNTER.inc()

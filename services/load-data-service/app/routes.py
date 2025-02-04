@@ -25,22 +25,31 @@ ERROR_COUNTER = Counter('load_data_error_total', 'Total failed requests for the 
 @bp.route('/load-data', methods=['POST'])
 def load_data():
     """
-    API Endpoint to load cleaned data into a specified format.
-
-    Query params:
-      - format (str): desired output format ('csv','excel','json')
-      - dataset_name (str, optional): name of dataset for metadata
+    API Endpoint to load (save) data into a specified format.
+    Read 'X-Params' header for 'format' and 'dataset_name'.
+        - format (str): desired output format ('csv','excel','json')
+        - dataset_name (str, optional): name of dataset for metadata
     Body:
-      - Arrow IPC in binary
+    - Arrow IPC data
+    Output: 
+    - Arrow IPC (pass-through)
     """
     start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
         logger.info("Received /load-data request.")
 
-        # get 'format' and 'dataset_name' from query
-        format_type = request.args.get('format', default=None, type=str)
-        dataset_name = request.args.get('dataset_name', 'no_dataset')
+        # Read the custom header 'X-Params'
+        raw_header = request.headers.get('X-Params', '{}')
+        try:
+            header_data = json.loads(raw_header)
+        except json.JSONDecodeError:
+            header_data = {}
+
+        # Now extract format and dataset_name from that dict
+        dataset_name = header_data.get('dataset_name', 'no_dataset')
+        format_type = header_data.get('format', None)
+
 
         if not format_type or format_type.lower() not in ['csv', 'xlsx', 'xls' 'json']:
             logger.error("Missing or unsupported 'format' parameter.")

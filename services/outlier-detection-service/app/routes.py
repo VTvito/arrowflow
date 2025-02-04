@@ -21,17 +21,27 @@ ERROR_COUNTER = Counter('outlier_detection_error_total', 'Total failed requests 
 @bp.route('/outlier-detection', methods=['POST'])
 def outlier_detection():
     """
-    POST /outlier-detection?dataset_name=...&column=...&z_threshold=3.0
+    API Endpoint to detect and remove outliers from a column in a dataset.
+    Header: X-Params (JSON) with keys: dataset_name, column, z_threshold
     Body: Arrow IPC
     Output: Arrow IPC with outliers removed from that column.
-    Also logs metadata in /app/data/<dataset_name>/metadata/
-    """
+"""
     start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
-        dataset_name = request.args.get('dataset_name', 'no_dataset')
-        column = request.args.get('column', None)
-        z_threshold = float(request.args.get('z_threshold', 3.0))
+
+        # Read the custom header 'X-Params'
+        raw_header = request.headers.get('X-Params', '{}')
+        try:
+            header_data = json.loads(raw_header)
+        except json.JSONDecodeError:
+            header_data = {}
+
+        # Now extract dataset_name, column and z_threshold from that dict
+        dataset_name = header_data.get('dataset_name', 'no_dataset')
+        column = header_data.get('column', None)
+        z_threshold = float(header_data.get('z_threshold', 3.0))
+
 
         ipc_data = request.get_data()
         if not ipc_data:

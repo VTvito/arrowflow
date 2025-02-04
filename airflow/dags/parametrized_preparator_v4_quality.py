@@ -4,7 +4,7 @@ from airflow.models.param import Param
 from datetime import datetime
 import json
 import os
-from preparator.preparator_v3 import Preparator
+from preparator.preparator_v4 import Preparator
 
 default_args = {
     'owner': 'airflow',
@@ -15,7 +15,7 @@ default_args = {
 CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json config in Airflow container
 
 with DAG(
-    "etl_arrow_parametrized_preparator_v3_quality",
+    "parametrized_preparator_v4_quality",
     default_args=default_args,
     schedule_interval=None,
     params={

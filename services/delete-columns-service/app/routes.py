@@ -21,9 +21,9 @@ ERROR_COUNTER = Counter('delete_columns_error_total', 'Total failed requests for
 @bp.route('/delete-columns', methods=['POST'])
 def delete_columns():
     """
-    API Endpoint that receives Arrow IPC + query params:
+    API Endpoint that receives Arrow IPC (Body) + header with columns to delete:
       - columns: comma-separated list of columns
-      - dataset_name: optional param to identify dataset
+      - dataset_name: param to identify dataset
     Returns Arrow IPC with those columns removed, and logs metadata.
     """
     start_time = time.time()
@@ -31,8 +31,17 @@ def delete_columns():
         REQUEST_COUNTER.inc()
         logger.info("Received /delete-columns request.")
 
-        columns_str = request.args.get('columns', '')
-        dataset_name = request.args.get('dataset_name', 'no_dataset')
+        # Read the custom header 'X-Params'
+        raw_header = request.headers.get('X-Params', '{}')
+        try:
+            header_data = json.loads(raw_header)
+        except json.JSONDecodeError:
+            header_data = {}
+
+        # Now extract columns and dataset_name from that dict
+        columns_str = header_data.get('columns', '')
+        dataset_name = header_data.get('dataset_name', 'no_dataset')
+        
 
         # Split and clean up column names
         columns_to_delete = [col.strip() for col in columns_str.split(',') if col.strip()]

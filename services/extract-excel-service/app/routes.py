@@ -27,6 +27,7 @@ ERROR_COUNTER = Counter('extract_excel_error_total', 'Total failed requests for 
 @bp.route('/extract-excel', methods=['POST'])
 def extract_excel():
     """
+    API Endpoint to extract data from an Excel file and serialize it into Arrow IPC format.
     Input: JSON with:
       - dataset_name
       - file_path (Excel .xls/.xlsx)

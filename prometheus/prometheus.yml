@@ -19,11 +19,6 @@ scrape_configs:
     static_configs:
       - targets: ['clean-nan-csv-service:5002']
 
-  - job_name: 'get-columns-csv-service'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['get-columns-csv-service:5003']
-
   - job_name: 'delete-columns-csv-service'
     metrics_path: '/metrics'
     static_configs:

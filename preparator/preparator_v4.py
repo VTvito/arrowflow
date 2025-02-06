@@ -21,7 +21,6 @@ class Preparator:
     # ----------------------------------------------------------------
 
     def run_service_json_in_ipc_out(self, service_key, json_data):
-    
         """
         An helper function that execute a POST request to microservice that accept JSON in input and returns data in Arrow IPC format       
         Allow to easily call microservices without repeating the HTTP request logic.
@@ -161,6 +160,40 @@ class Preparator:
             "rules": rules  # pass the dictionary of rules
         }
         return self.run_service_ipc_in_ipc_out_with_header("data_quality", ipc_data, header_dict)
+    
+
+    # Multi-Part HTTP request for join-datasets
+    def join_datasets(self, ipc_data1, ipc_data2, dataset_name="default_dataset", join_key="id", join_type="inner"):
+        """
+        Calls join-datasets-service with a multipart form-data:
+        - dataset1 (Arrow IPC)
+        - dataset2 (Arrow IPC)
+        Passes optional params in X-Params (JSON).
+        Returns the joined Arrow IPC.
+        """
+        header_dict = {
+            "dataset_name": dataset_name,
+            "join_key": join_key,
+            "join_type": join_type
+        }
+        x_params = json.dumps(header_dict)
+
+        service_key = "join_datasets"
+        url = self.services[service_key]
+
+        self.logger.info(f"Calling {service_key} for join with 2 datasets. Key={join_key}, Type={join_type}")
+
+        # Multipart request building 'datasetX' are the keys of data-form
+        files = {
+            'dataset1': ('dataset1.arrow', ipc_data1, 'application/vnd.apache.arrow.stream'),
+            'dataset2': ('dataset2.arrow', ipc_data2, 'application/vnd.apache.arrow.stream')
+        }
+        headers = {
+            "X-Params": x_params
+        }
+        resp = self.session.post(url, files=files, headers=headers)
+        resp.raise_for_status()
+        return resp.content  # Arrow IPC
 
     # ================================================================
     #   LOAD

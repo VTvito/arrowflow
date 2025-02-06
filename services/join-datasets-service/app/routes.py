@@ -1,70 +1,106 @@
-from flask import Blueprint, jsonify, request
-from app.join import join_datasets
-from common.arrow_utils import table_to_ipc, ipc_to_table
+from flask import Blueprint, jsonify, request, Response
+import logging
+import time
+import json
 import os
-import pandas as pd
+from datetime import datetime
+from app.join import join_datasets_logic
 from prometheus_client import Counter, generate_latest
-from flask import Response
-
+from common.arrow_utils import ipc_to_table, table_to_ipc
+from common.json_utils import NpEncoder
+import pyarrow as pa
 
 bp = Blueprint('join-datasets', __name__)
+logger = logging.getLogger('join-datasets-service')
 
-DATA_FOLDER = '/app/data'
+REQUEST_COUNTER = Counter('join_datasets_requests_total', 'Total requests for the join datasets service')
+SUCCESS_COUNTER = Counter('join_datasets_success_total', 'Total successful requests for the join datasets service')
+ERROR_COUNTER = Counter('join_datasets_error_total', 'Total failed requests for the join datasets service')
 
 @bp.route('/join-datasets', methods=['POST'])
-def join_datasets_endpoint():
+def join_datasets():
+    """
+    Join Service:
+      - Receives a multipart/form-data request with two files (dataset1, dataset2),
+        each in Arrow IPC format.
+      - Reads optional parameters (like join_key, join_type) from the header X-Params (JSON).
+      - Performs the join and returns the result in Arrow IPC.
+    """
+    start_time = time.time()
     try:
-        # Parametri dal body della richiesta
-        client_id = request.json.get('client_id', 'client_id')
-        dataset_name = request.json.get('dataset_name', 'dataset_name')
-        file_paths = request.json.get('file_paths')  # Lista di file CSV
-        join_key = request.json.get('join_key')  # Chiave di join
-        join_type = request.json.get('join_type', 'inner')  # Tipo di join
-        
-        if not file_paths or len(file_paths) < 2:
-            return jsonify({"error": "Devono essere forniti almeno due file per il join"}), 400
-        
-        if not join_key:
-            return jsonify({"error": "La chiave di join è richiesta"}), 400
+        REQUEST_COUNTER.inc()
+        logger.info("Received /join-datasets request (multipart).")
 
-        # Esegui il join
-        joined_data = join_datasets(file_paths, join_key, join_type)
+        # 1) parse header 'X-Params'
+        raw_params = request.headers.get('X-Params', '{}')
+        try:
+            params = json.loads(raw_params)
+        except json.JSONDecodeError:
+            params = {}
 
-        # Crea la cartella del cliente se non esiste e salva il dataset joinato 
-        client_folder = os.path.join(DATA_FOLDER, client_id, 'join-datasets')
-        os.makedirs(client_folder, exist_ok=True)
-        file_path = os.path.join(client_folder, f'{dataset_name}.csv')
-        joined_data.to_csv(file_path, index=False)
+        dataset_name = params.get('dataset_name', 'no_dataset')
+        join_key = params.get('join_key', 'id')
+        join_type = params.get('join_type', 'inner')  # "inner", "left", "right", "outer"
 
-        return jsonify({
-            "status": "success",
-            "data_preview": joined_data.head().to_dict(),
-            "file_path": file_path
-        }), 200
+        # 2) Retrieve the two files from the multipart request
+        file1 = request.files.get('dataset1')
+        file2 = request.files.get('dataset2')
+
+        if not file1 or not file2:
+            logger.error("Both datasets (dataset1, dataset2) are required.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Both datasets must be provided"}), 400
+
+        ipc_data1 = file1.read()
+        ipc_data2 = file2.read()
+        logger.info(f"Received dataset1 size={len(ipc_data1)}, dataset2 size={len(ipc_data2)} bytes")
+
+        # 3) Convert both to Arrow Table
+        table1 = ipc_to_table(ipc_data1)
+        table2 = ipc_to_table(ipc_data2)
+        rows1, cols1 = table1.num_rows, table1.num_columns
+        rows2, cols2 = table2.num_rows, table2.num_columns
+
+        # 4) Execute the join
+        joined_table, (rows_out, cols_out) = join_datasets_logic(table1, table2, join_key, join_type)
+        out_ipc = table_to_ipc(joined_table)
+
+        SUCCESS_COUNTER.inc()
+        logger.info(f"Joined data with join_key={join_key}, type={join_type}. Output rows={rows_out}, cols={cols_out}")
+
+        # 5) Save metadata
+        end_time = time.time()
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        dataset_folder = f"/app/data/{dataset_name}"
+        os.makedirs(dataset_folder, exist_ok=True)
+        meta_dir = os.path.join(dataset_folder, "metadata")
+        os.makedirs(meta_dir, exist_ok=True)
+
+        meta_file = os.path.join(meta_dir, f"metadata_join_{timestamp}.json")
+        metadata = {
+            "service_name": "join-datasets",
+            "dataset_name": dataset_name,
+            "join_key": join_key,
+            "join_type": join_type,
+            "rows_1": rows1,
+            "cols_1": cols1,
+            "rows_2": rows2,
+            "cols_2": cols2,
+            "rows_out": rows_out,
+            "cols_out": cols_out,
+            "duration_sec": round(end_time - start_time, 3),
+            "timestamp": timestamp
+        }
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f, cls=NpEncoder, indent=2)
+
+        return Response(out_ipc, mimetype="application/vnd.apache.arrow.stream"), 200
 
     except Exception as e:
+        ERROR_COUNTER.inc()
+        logger.exception("Error during /join-datasets processing.")
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@bp.route('/get-joined-dataset/<client_id>/<dataset_name>', methods=['GET'])
-def get_joined_dataset(client_id, dataset_name):
-    try:
-        # Percorso al dataset combinato
-        file_path = os.path.join(DATA_FOLDER, client_id, 'join-datasets', f'{dataset_name}.csv')
-        if not os.path.exists(file_path):
-            return jsonify({"error": "Dataset combinato non trovato"}), 404
-
-        data = pd.read_csv(file_path)
-        return jsonify(data.to_dict()), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-    
-
-# Endpoint per il monitoraggio
-
-REQUEST_COUNTER = Counter('service_requests_total', 'Total number of requests for this service')
 
 @bp.route('/metrics', methods=['GET'])
 def metrics():
-    REQUEST_COUNTER.inc()  # Incrementa ogni volta che viene richiesta la metrica
     return Response(generate_latest(), mimetype="text/plain")

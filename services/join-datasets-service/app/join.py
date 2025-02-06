@@ -1,23 +1,29 @@
+import pyarrow as pa
 import pandas as pd
 
-def join_datasets(file_paths, join_key, join_type):
+def join_datasets_logic(table1, table2, join_key="id", join_type="inner"):
     """
-    Unisce più dataset sulla base di una chiave comune.
-
+    Execute the join of 2 datasets represented like Arrow Table.
+    
     Args:
-        file_paths (list): Lista di percorsi ai file CSV.
-        join_key (str): Chiave di join comune.
-        join_type (str): Tipo di join ('inner', 'outer', 'left', 'right').
-
+      table1 (pyarrow.Table): 1 table.
+      table2 (pyarrow.Table): 2 table.
+      join_key (str): Join's key.
+      join_type (str): Join's type ("inner", "left", "right", "outer").
+      
     Returns:
-        pd.DataFrame: Dataset combinato.
+      tuple: (joined_table, (rows_out, cols_out))
+             where joined_table is the output table in Arrow format,
+             and (rows_out, cols_out) is the shape of the output table.
     """
-    # Carica il primo dataset
-    combined_data = pd.read_csv(file_paths[0])
-
-    # Unisci i dataset successivi
-    for file_path in file_paths[1:]:
-        data = pd.read_csv(file_path)
-        combined_data = combined_data.merge(data, on=join_key, how=join_type)
-
-    return combined_data
+    # Convert Arrow Table to Pandas DataFrame
+    df1 = table1.to_pandas()
+    df2 = table2.to_pandas()
+    
+    # Perform the join operation in Pandas
+    joined_df = df1.merge(df2, on=join_key, how=join_type)
+    
+    # Convert the joined DataFrame back to Arrow Table
+    joined_table = pa.Table.from_pandas(joined_df)
+    
+    return joined_table, joined_df.shape

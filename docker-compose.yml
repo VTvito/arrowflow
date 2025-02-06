@@ -97,19 +97,6 @@ services:
       - etl-network
     restart: always
 
-  get-columns-service:
-    build:
-      context: ./services
-      dockerfile: get-columns-service/Dockerfile
-    container_name: get-columns-service
-    volumes:
-      - etl-containers-shared-data:/app/data
-    ports:
-      - "5003:5003"
-    networks:
-      - etl-network
-    restart: always
-
   delete-columns-service:
     build:
       context: ./services

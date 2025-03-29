@@ -9,25 +9,20 @@ scrape_configs:
     static_configs:
       - targets: ['statsd-exporter:9102']
 
-  - job_name: 'read-csv-service'
+  - job_name: 'extract-csv-service'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['read-csv-service:5001']
+      - targets: ['extract-csv-service:5001']
 
-  - job_name: 'clean-nan-csv-service'
+  - job_name: 'clean-nan-service'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['clean-nan-csv-service:5002']
+      - targets: ['clean-nan-service:5002']
 
-  - job_name: 'get-columns-csv-service'
+  - job_name: 'delete-columns-service'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['get-columns-csv-service:5003']
-
-  - job_name: 'delete-columns-csv-service'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: ['delete-columns-csv-service:5004']
+      - targets: ['delete-columns-service:5004']
 
   - job_name: 'extract-sql-service'
     metrics_path: '/metrics'

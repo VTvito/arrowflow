@@ -1,0 +1,6 @@
+Flask==3.0.3
+prometheus_client==0.21.0
+pyarrow==18.1.0
+pandas==2.2.2
+numpy==2.0.2
+xlsxwriter==3.2.0

@@ -43,11 +43,15 @@ def api_extraction():
         logger.info("Received /extract-api request.")
 
         data = request.get_json()
-        dataset_name = data.get('dataset_name', 'no_dataset')
+        dataset_name = data.get('dataset_name')
         api_url = data.get('api_url')
         api_params = data.get('api_params', {})
         auth_type = data.get('auth_type')
         auth_value = data.get('auth_value')
+
+        if not dataset_name:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         if not api_url:
             ERROR_COUNTER.inc()
@@ -74,7 +78,7 @@ def api_extraction():
         os.makedirs(dataset_folder, exist_ok=True)
         metadata_dir = os.path.join(dataset_folder, "metadata")
         os.makedirs(metadata_dir, exist_ok=True)
-        metadata_path = os.path.join(metadata_dir, f"metadata_delete_columns_{timestamp}.json")
+        metadata_path = os.path.join(metadata_dir, f"metadata_extract_api_{timestamp}.json")
         
         metadata = {
             "service_name": "extract-api",

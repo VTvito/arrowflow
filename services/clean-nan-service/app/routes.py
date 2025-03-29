@@ -39,11 +39,17 @@ def clean_nan():
             params = {}
 
         # Now extract dataset_name from that dict
-        dataset_name = params.get('dataset_name', 'no_dataset')
+        dataset_name = params.get('dataset_name')
+        
+        if dataset_name is None:
+            ERROR_COUNTER.inc()
+            logger.error("No dataset_name provided in X-Params.")
+            return jsonify({"status": "error", "message": "No dataset_name provided in X-Params"}), 400
 
         ipc_data = request.get_data()
         if not ipc_data:
             ERROR_COUNTER.inc()
+            logger.error("No Arrow IPC data received.")
             return jsonify({"status": "error", "message": "No Arrow IPC data received"}), 400
 
         # Convert Arrow IPC to Table
@@ -81,6 +87,8 @@ def clean_nan():
             "rows_out": rows_out,
             "cols_in": cols_in,
             "cols_out": cols_out,
+            "total_cells": total_cells,
+            "na_total": total_null,
             "na_removed": removed_null_count,
             "duration_sec": round(end_time - start_time, 3),
             "timestamp": timestamp

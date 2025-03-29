@@ -29,6 +29,7 @@ def outlier_detection():
     start_time = time.time()
     try:
         REQUEST_COUNTER.inc()
+        logger.info("Received /outlier-detection request.")
 
         # Read the custom header 'X-Params'
         raw_header = request.headers.get('X-Params', '{}')
@@ -38,10 +39,17 @@ def outlier_detection():
             header_data = {}
 
         # Now extract dataset_name, column and z_threshold from that dict
-        dataset_name = header_data.get('dataset_name', 'no_dataset')
-        column = header_data.get('column', None)
+        dataset_name = header_data.get('dataset_name')
+        column = header_data.get('column' , '')
         z_threshold = float(header_data.get('z_threshold', 3.0))
 
+        if not dataset_name:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "No dataset_name provided in header"}), 400
+
+        if not column:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "No column provided in header"}), 400
 
         ipc_data = request.get_data()
         if not ipc_data:
@@ -64,10 +72,10 @@ def outlier_detection():
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         dataset_folder = f"/app/data/{dataset_name}"
         os.makedirs(dataset_folder, exist_ok=True)
-        meta_dir = os.path.join(dataset_folder, "metadata")
-        os.makedirs(meta_dir, exist_ok=True)
-
-        meta_file = os.path.join(meta_dir, f"metadata_outliers_{timestamp}.json")
+        metadata_dir = os.path.join(dataset_folder, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_path = os.path.join(metadata_dir, f"metadata_outliers_{timestamp}.json")
+        
         metadata = {
             "service_name": "outlier-detection",
             "dataset_name": dataset_name,
@@ -79,11 +87,11 @@ def outlier_detection():
             "duration_sec": round(end_time - start_time, 3),
             "timestamp": timestamp
         }
-        with open(meta_file, "w") as f:
+        with open(metadata_path, "w") as f:
             json.dump(metadata, f, cls=NpEncoder, indent=2)
 
         return Response(out_ipc, mimetype="application/vnd.apache.arrow.stream"), 200
-
+    
     except Exception as e:
         ERROR_COUNTER.inc()
         logger.exception("Error in outlier detection.")

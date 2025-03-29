@@ -47,9 +47,13 @@ def load_data():
             header_data = {}
 
         # Now extract format and dataset_name from that dict
-        dataset_name = header_data.get('dataset_name', 'no_dataset')
-        format_type = header_data.get('format', None)
+        dataset_name = header_data.get('dataset_name')
+        format_type = header_data.get('format')
 
+        if not dataset_name:
+            logger.error("Parameter 'dataset_name' is required.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         if not format_type or format_type.lower() not in ['csv', 'xlsx', 'xls' 'json']:
             logger.error("Missing or unsupported 'format' parameter.")
@@ -119,6 +123,7 @@ def load_data():
             "status": "success",
             "message": f"Data loaded successfully and saved to {file_path}"
         }), 200
+    
     except Exception as e:
         ERROR_COUNTER.inc()
         logger.exception("Error during /load-data processing.")

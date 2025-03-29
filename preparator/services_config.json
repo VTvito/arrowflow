@@ -8,5 +8,6 @@
     "join_datasets": "http://join-datasets-service:5008/join-datasets",
     "load_data": "http://load-data-service:5009/load-data",
     "data_quality": "http://data-quality-service:5010/data-quality",
-    "outlier_detection": "http://outlier-detection-service:5011/outlier-detection"
+    "outlier_detection": "http://outlier-detection-service:5011/outlier-detection",
+    "text_completion_llm": "http://text-completion-llm-service:5012/text-completion-llm"
 }

@@ -38,9 +38,21 @@ def join_datasets():
         except json.JSONDecodeError:
             params = {}
 
-        dataset_name = params.get('dataset_name', 'no_dataset')
-        join_key = params.get('join_key', 'id')
-        join_type = params.get('join_type', 'inner')  # "inner", "left", "right", "outer"
+        dataset_name = params.get('dataset_name')
+        join_key = params.get('join_key')
+        join_type = params.get('join_type')  # "inner", "left", "right", "outer"
+
+        if not dataset_name:
+            logger.error("Parameter 'dataset_name' is required.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
+        
+        if not join_key or not join_type:
+            logger.error("Both join_key and join_type are required.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Both join_key and join_type are required"}), 400
+        
+        logger.info(f"Joining datasets with join_key={join_key}, type={join_type}")
 
         # 2) Retrieve the two files from the multipart request
         file1 = request.files.get('dataset1')

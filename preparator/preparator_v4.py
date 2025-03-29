@@ -3,6 +3,7 @@ import requests
 import logging
 import json
 
+
 class Preparator:
     def __init__(self, services_config):
         """
@@ -22,12 +23,8 @@ class Preparator:
 
     def run_service_json_in_ipc_out(self, service_key, json_data):
         """
-        An helper function that execute a POST request to microservice that accept JSON in input and returns data in Arrow IPC format       
-        Allow to easily call microservices without repeating the HTTP request logic.
-
-        - Logs the service call
-        - Makes an HTTP POST request to the service endpoint corresponding to service_key
-        - Returns the response content (expected to be Arrow IPC bytes)
+        Executes a POST request to a microservice that accepts JSON as input and returns Arrow IPC.
+        Logs the service call and returns the response content.
         """
         self.logger.info(f"Calling {service_key} with JSON data: {json_data}")
         url = self.services[service_key]
@@ -39,20 +36,13 @@ class Preparator:
     # For microservices that ACCEPT Arrow IPC in the body
     # and parameters in a header 'X-Params' (in JSON format)
     # ----------------------------------------------------------------
-    def run_service_ipc_in_ipc_out_with_header(self, service_key, ipc_data, header_dict=None):
+    def run_service_ipc_in_ipc_out_with_header(self, service_key, ipc_data, header_dict):
         """
-        Executes a POST request to the microservice identified by `service_key`, sending the parameters
-        in a header called 'X-Params' in JSON format, and sending `ipc_data` (Arrow IPC) as the body.
-
-        - Logs the service call        
-        - Makes an HTTP POST request with the IPC data
-        - Returns the response content (expected to be Arrow IPC bytes)
+        Executes a POST request to the microservice identified by `service_key`,
+        sending `ipc_data` in the body and parameters (header_dict) in a header called 'X-Params' (as JSON).
+        Logs the service call and returns the response content (expected to be Arrow IPC bytes).
         """
-        if header_dict is None:
-            header_dict = {}
-
         header_json = json.dumps(header_dict)
-
         self.logger.info(f"Calling {service_key} with IPC data (size={len(ipc_data)}). Header: {header_json}")
         url = self.services[service_key]
 
@@ -70,10 +60,9 @@ class Preparator:
     # ================================================================
     # EXTRACTION
     # ================================================================
-
     def extract_csv(self, dataset_name, file_path):
         """
-        'extract_csv' microservice that accepts JSON -> returns Arrow IPC
+        'extract_csv' microservice that accepts JSON and returns Arrow IPC.
         """
         return self.run_service_json_in_ipc_out("extract_csv", {
             "dataset_name": dataset_name,
@@ -82,7 +71,7 @@ class Preparator:
 
     def extract_excel(self, dataset_name, file_path):
         """
-        'extract_excel' microservice that accepts JSON -> returns Arrow IPC
+        'extract_excel' microservice that accepts JSON and returns Arrow IPC.
         """
         return self.run_service_json_in_ipc_out("extract_excel", {
             "dataset_name": dataset_name,
@@ -91,7 +80,7 @@ class Preparator:
 
     def extract_api(self, dataset_name, api_url, api_params={}, auth_type=None, auth_value=None):
         """
-        'extract_api' microservice with JSON -> returns Arrow IPC
+        'extract_api' microservice that accepts JSON and returns Arrow IPC.
         """
         json_data = {
             "dataset_name": dataset_name,
@@ -107,7 +96,7 @@ class Preparator:
 
     def extract_sql(self, dataset_name, db_url, query):
         """
-        'extract_sql' microservice with JSON -> returns Arrow IPC
+        'extract_sql' microservice that accepts JSON and returns Arrow IPC.
         """
         json_data = {
             "dataset_name": dataset_name,
@@ -160,7 +149,6 @@ class Preparator:
             "rules": rules  # pass the dictionary of rules
         }
         return self.run_service_ipc_in_ipc_out_with_header("data_quality", ipc_data, header_dict)
-    
 
     # Multi-Part HTTP request for join-datasets
     def join_datasets(self, ipc_data1, ipc_data2, dataset_name="default_dataset", join_key="id", join_type="inner"):
@@ -194,6 +182,21 @@ class Preparator:
         resp = self.session.post(url, files=files, headers=headers)
         resp.raise_for_status()
         return resp.content  # Arrow IPC
+    
+
+    def text_completion_llm(self, ipc_data, dataset_name="default_dataset", text_column="column", max_tokens=None, missing_placeholder="[MISSING]"):
+        """
+        'text_completion_llm' microservice that uses Arrow IPC in the body and parameters in the header.
+        Parameters are required and passed explicitly.
+        """
+        header_dict = {
+            "dataset_name": dataset_name,
+            "text_column": text_column,
+            "max_tokens": max_tokens,
+            "missing_placeholder": missing_placeholder
+        }
+        return self.run_service_ipc_in_ipc_out_with_header("text_completion_llm", ipc_data, header_dict)
+
 
     # ================================================================
     #   LOAD

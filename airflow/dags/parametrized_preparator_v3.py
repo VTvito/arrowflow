@@ -12,7 +12,7 @@ default_args = {
     'retries': 1,
 }
 
-CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json config in Airflow container
+CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json mapping configuration file in Airflow container
 
 with DAG(
     "parametrized_preparator_v3",

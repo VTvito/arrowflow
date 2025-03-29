@@ -41,13 +41,21 @@ def extract_data():
         logger.info("Received /extract-sql request.")
 
         data = request.get_json()
-        dataset_name = data.get('dataset_name', 'no_dataset')
-        query = data.get('query', 'SELECT * FROM table_name')
+        dataset_name = data.get('dataset_name')
+        query = data.get('query')
         db_url = data.get('db_url')
 
-        if not db_url:
+        if not db_url or query is None:
+            logger.error("Missing 'db_url' or 'query' in request.")
             ERROR_COUNTER.inc()
-            return jsonify({"status": "error", "message": "Parameter 'db_url' is required"}), 400
+            return jsonify({"status": "error", "message": "Parameters 'db_url' and 'query' are required"}), 400
+        
+        if not dataset_name:
+            logger.error("Missing 'dataset_name' in request.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
+        
+        logger.info(f"Extracting from SQL: {db_url} with query '{query}' for dataset '{dataset_name}'")
 
         # Load into Arrow Table
         arrow_table = extract_from_sql(db_url, query)

@@ -40,9 +40,13 @@ def delete_columns():
 
         # Now extract columns and dataset_name from that dict
         columns_str = header_data.get('columns', '')
-        dataset_name = header_data.get('dataset_name', 'no_dataset')
-        
+        dataset_name = header_data.get('dataset_name')
 
+        if not dataset_name:
+            logger.error("No dataset_name provided in header.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "No dataset_name provided in header"}), 400
+        
         # Split and clean up column names
         columns_to_delete = [col.strip() for col in columns_str.split(',') if col.strip()]
         if not columns_to_delete:

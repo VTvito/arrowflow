@@ -201,6 +201,22 @@ services:
       - etl-network
     restart: always
 
+  text-completion-llm-service:
+    build:
+      context: ./services
+      dockerfile: text-completion-llm-service/Dockerfile
+    container_name: text-completion-llm-service
+    volumes:
+      - etl-containers-shared-data:/app/data
+      # Mount the local folder 'hf-cache' with the weights of HF model in the container (usually in C:/user/.cache/huggingface)
+      - type: bind
+        source: "D:/hf_models/"
+        target: "/root/.cache/huggingface"
+    ports:
+      - "5012:5012"
+    networks:
+      - etl-network
+    restart: always
 
 networks:
   etl-network:
@@ -212,3 +228,4 @@ volumes:
   etl-data-airflow:
   etl-grafana-data:
   etl-prometheus-data:
+  hf-cache:

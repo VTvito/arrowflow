@@ -40,8 +40,16 @@ def data_quality():
             header_data = {}
 
         # Extract dataset_name and rules from dict
-        dataset_name = header_data.get('dataset_name', 'no_dataset')
-        rules = header_data.get('rules', {})
+        dataset_name = header_data.get('dataset_name')
+        rules = header_data.get('rules')
+
+        if not dataset_name:
+            ERROR_COUNTER.inc()
+            logger.error("No dataset_name provided in header.")
+            return jsonify({"status": "error", "message": "No dataset_name provided in header"}), 400
+        
+        if not rules:
+            logger.info("No rules provided in header. Using default rules.")
 
         # Retrieve the Arrow IPC bytes from the request body.
         ipc_data = request.get_data()

@@ -39,12 +39,18 @@ def extract_excel():
         logger.info("Received /extract-excel request.")
 
         data = request.get_json()
-        dataset_name = data.get('dataset_name', 'no_dataset')
+        dataset_name = data.get('dataset_name')
         file_path = data.get('file_path')
+
         if not file_path:
             logger.error("Missing 'file_path' param.")
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'file_path' is required"}), 400
+
+        if not dataset_name:
+            logger.error("Missing 'dataset_name' param.")
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         logger.info(f"Extracting from Excel: {file_path} for dataset '{dataset_name}'")
 

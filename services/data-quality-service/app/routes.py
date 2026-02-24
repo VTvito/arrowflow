@@ -101,3 +101,7 @@ def data_quality():
 @bp.route('/metrics', methods=['GET'])
 def metrics():
     return Response(generate_latest(), mimetype="text/plain")
+
+@bp.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200

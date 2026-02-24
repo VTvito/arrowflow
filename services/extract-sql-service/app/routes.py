@@ -107,3 +107,7 @@ def extract_data():
 def metrics():
     REQUEST_COUNTER.inc()
     return Response(generate_latest(), mimetype="text/plain")
+
+@bp.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200

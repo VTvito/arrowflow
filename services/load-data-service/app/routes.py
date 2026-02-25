@@ -55,12 +55,12 @@ def load_data():
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
-        if not format_type or format_type.lower() not in ['csv', 'xlsx', 'xls' 'json']:
+        if not format_type or format_type.lower() not in ['csv', 'xlsx', 'xls', 'json']:
             logger.error("Missing or unsupported 'format' parameter.")
             ERROR_COUNTER.inc()
             return jsonify({
                 "status": "error",
-                "message": "Parameter 'format' must be one of ['csv', 'xlsx', 'xls' 'json']"
+                "message": "Parameter 'format' must be one of ['csv', 'xlsx', 'xls', 'json']"
             }), 400
 
         logger.info(f"Requested format for loading data: {format_type}")
@@ -135,3 +135,7 @@ def metrics():
     Prometheus monitoring endpoint
     """
     return Response(generate_latest(), mimetype="text/plain")
+
+@bp.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200

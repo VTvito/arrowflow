@@ -127,3 +127,7 @@ def metrics():
     Endpoint for Prometheus metrics, similar to other microservices.
     """
     return Response(generate_latest(), mimetype="text/plain")
+
+@bp.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200

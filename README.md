@@ -1,93 +1,129 @@
-# Progetto ETL a Microservizi su Kubernetes con Monitoraggio e Persistenza
-Il progetto consiste nella costruzione di un'architettura ETL (Extract, Transform, Load) basata su microservizi orchestrati tramite Airflow.
-I microservizi sono containerizzati con Docker e successivamente deployiati su Kubernetes. 
-L'architettura è monitorata attraverso Prometheus e Grafana, 
-con persistenza dei dati garantita da Postgres per il database di Airflow e volumi persistenti per DAG e dati condivisi.
+# ETL Microservices Platform
+
+A modular ETL (Extract, Transform, Load) platform built with a microservices architecture. Each ETL operation is an independent Flask-based microservice, orchestrated via Apache Airflow DAGs. The platform uses **Apache Arrow IPC** as the wire format for high-performance binary data interchange between services.
 
 ---
 
-## 1. Architettura
+## 1. Architecture
 
-L'architettura è suddivisa nei seguenti componenti principali:
+Data flows through the pipeline as Apache Arrow IPC binary streams:
 
-### MICROSERVIZI ETL:
-1. **extract-csv-service**: Estrae i dati da file CSV.
-2. **extract-sql-service**: Estrae dati da tabella SQL e trasforma in CSV.
-3. **extract-api-service**: Estrae dati da endpoint API e trasforma in CSV.
-4. **extract-excel-service**: Estrae dati da file Excel e trasforma in CSV.
-5. **clean-nan-service**: Rimuove valori NaN dai dati.
-6. **get-columns-csv-service**: Recupera le colonne specifiche del dataset.
-7. **delete-columns-csv-service**: Elimina colonne indesiderate.
-8. **join-datasets-csv-service**: Consente il join fra 2+ datasets su una chiave comune.
+```
+[Source] → [Extract Service] → Arrow IPC → [Transform Service(s)] → Arrow IPC → [Load Service] → [Output]
+                                      ↑
+                           Airflow DAG orchestrates via Preparator SDK
+```
 
+### ETL Microservices
 
+| Service | Port | Description |
+|---|---|---|
+| `extract-csv-service` | 5001 | Reads CSV files, returns Arrow IPC |
+| `clean-nan-service` | 5002 | Drops rows with null values |
+| `delete-columns-service` | 5004 | Removes specified columns |
+| `extract-sql-service` | 5005 | Executes SQL queries via SQLAlchemy |
+| `extract-api-service` | 5006 | Fetches data from REST APIs |
+| `extract-excel-service` | 5007 | Reads Excel (.xls/.xlsx) files |
+| `join-datasets-service` | 5008 | Joins two datasets (inner/left/right/outer) |
+| `load-data-service` | 5009 | Exports data to CSV/Excel/JSON |
+| `data-quality-service` | 5010 | Validates quality rules (null ratio, min rows) |
+| `outlier-detection-service` | 5011 | Z-score outlier detection and removal |
+| `text-completion-llm-service` | 5012 | LLM-based text placeholder completion |
 
-I microservizi sono strutturati in modo modulare, separando la logica di instradamento (**routes**) dalla logica di manipolazione dei dati. Utilizzano **Flask** come webserver.
+Each service exposes:
+- `POST /<service-name>` — main ETL endpoint
+- `GET /health` — health check for container orchestration
+- `GET /metrics` — Prometheus scrape endpoint
 
----
-
-### AIRFLOW:
-- Gestisce i **DAG** (Direct Acyclic Graphs) per l'orchestrazione delle operazioni ETL.
-- Utilizza **Postgres** per la persistenza.
-
----
-
-### MONITORAGGIO CON PROMETHEUS E GRAFANA:
-- **Prometheus**: Raccoglie metriche da Airflow e dai microservizi.
-- **Grafana**: Visualizza le metriche e permette di creare dashboard interattive.
-
----
-
-### DATABASE:
-- **Postgres** per la persistenza del database Airflow.
+Services are structured modularly, separating HTTP routing (`routes.py`) from data transformation logic. The **Preparator** SDK (`preparator/preparator_v4.py`) provides a typed Python client that abstracts all HTTP communication, enabling pipeline composition in code.
 
 ---
 
-## 2. Guida all'Installazione
+### Airflow
 
-### Requisiti:
-- **Docker Desktop**
-- **Kubernetes** (Minikube o Docker Desktop)
-- **Helm** (per gestione avanzata dei manifest, da integrare)
+- Orchestrates ETL pipelines via **DAGs** (Directed Acyclic Graphs)
+- Uses **PostgreSQL** for metadata persistence
+- DAGs use the `Preparator` SDK to call microservices
+
+Available DAGs:
+
+| DAG | Description |
+|---|---|
+| `parametrized_preparator_v4_quality` | Extract → Quality Check → Outlier Detection → Clean NaN → Load |
+| `parametrized_preparator_v4_ia` | Pipeline with LLM text completion step |
+| `parametrized_preparator_v4_quality_join` | Pipeline with dataset join |
+| `parametrized_preparator_v4_ia_multitasks_v1` | Multi-task pipeline with XCom base64 encoding |
+| `parametrized_preparator_v4_ia_multitasks_v2` | Streamlined multi-task pipeline |
 
 ---
 
-### Esecuzione su Docker
+### Monitoring
 
-1. **Clona il repository**:
+- **Prometheus** (port 9090): Collects metrics from all microservices and Airflow
+- **Grafana** (port 3000): Visualizes metrics and dashboards
+- **StatsD Exporter**: Bridges Airflow metrics to Prometheus
+
+---
+
+### Infrastructure
+
+- **PostgreSQL**: Airflow metadata database
+- **Docker Compose**: Full-stack local deployment
+- Shared volume `etl-containers-shared-data` mounted at `/app/data` across all services
+
+---
+
+## 2. Installation Guide
+
+### Requirements
+
+- **Docker Desktop** (with Docker Compose)
+
+---
+
+### Running with Docker Compose
+
+1. **Clone the repository**:
    ```bash
    git clone https://github.com/VTvito/etl_microservices.git
    cd etl_microservices
+   ```
 
-2. **Costruisci le immigini Docker e avviale**:
+2. **Build and start all services**:
    ```bash
    docker-compose build
    docker-compose up -d
-
-3. **Inizializza il database Airflow e crea utente admin**:
-  ```bash
-  docker exec -it airflow airflow db init
-  docker exec -it airflow airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com -–password admin
-  ```
-
-4. **Copia dei file (dataset e dag) nei volumi montati (vedi docker-compose per il percorso)**:
-   ```bash
-   docker cp /path/to/local/file container_name:/path/in/container  
-   esempio per file: docker cp dataset_test.csv read-csv-service:/app/data  
-   esempio per i dags: docker cp airflow/dags/etl_dag.py airflow:/opt/airflow/dags  
    ```
 
-# Accedi all'interfaccia web:
+3. **Initialize the Airflow database and create an admin user**:
+   ```bash
+   docker exec -it airflow airflow db init
+   docker exec -it airflow airflow users create \
+     --username admin --firstname Admin --lastname User \
+     --role Admin --email admin@example.com --password admin
+   ```
 
-Airflow: http://localhost:8080  
-Prometheus: http://localhost:9090  
-Grafana: http://localhost:3000  
+4. **Copy datasets into the shared volume**:
+   ```bash
+   docker cp /path/to/dataset.csv extract-csv-service:/app/data/
+   ```
 
-### I files risultanti dall'elaborazione è possibile controllarli all'interno del volume Docker etl-containers-shared-data  
+5. **Access the web interfaces**:
 
+   | Interface | URL |
+   |---|---|
+   | Airflow | http://localhost:8080 |
+   | Prometheus | http://localhost:9090 |
+   | Grafana | http://localhost:3000 |
 
-5. **Deployare su Kubernetes (da definire ancora)**:
-  ```bash
-kubectl apply -f ./kubernetes
-kubectl get pods
-(controllo correttezza pods)
+Processed output files are stored in the Docker volume `etl-containers-shared-data` under `/app/data/<dataset_name>/processed/`.
+
+---
+
+## 3. Service Communication
+
+- **Extract services**: Accept JSON body, return Arrow IPC
+- **Transform services**: Accept Arrow IPC body + `X-Params` JSON header, return Arrow IPC
+- **Load service**: Accepts Arrow IPC body + `X-Params` JSON header, saves file and returns JSON status
+
+The `Preparator` class handles all HTTP communication automatically when composing pipelines.

@@ -33,7 +33,7 @@ def clean_nan():
         params = parse_x_params()
         dataset_name = params.get('dataset_name')
 
-        if dataset_name is None:
+        if not dataset_name:
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "No dataset_name provided in X-Params"}), 400
 

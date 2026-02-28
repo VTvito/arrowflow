@@ -7,6 +7,9 @@ logger = logging.getLogger('delete-columns-service')
 def drop_columns_arrow(arrow_table, columns_to_delete):
     """
     Remove specified columns from an Arrow Table, returning (new_table, removed_count).
+
+    Uses native PyArrow ``drop_columns`` (zero-copy) instead of converting
+    to Pandas and back.
     """
     try:
         if columns_to_delete is None:
@@ -16,15 +19,11 @@ def drop_columns_arrow(arrow_table, columns_to_delete):
         elif not isinstance(columns_to_delete, (list, tuple, set)):
             raise ValueError("columns_to_delete must be a list-like collection or string")
 
-        df = arrow_table.to_pandas()
-        existing_cols = set(df.columns)
-        to_remove_actual = [c for c in columns_to_delete if c in existing_cols]
+        existing_cols = set(arrow_table.column_names)
+        to_remove = [c for c in columns_to_delete if c in existing_cols]
 
-        df.drop(columns=columns_to_delete, inplace=True, errors='ignore')
-        removed_count = len(to_remove_actual)
-
-        new_table = pa.Table.from_pandas(df)
-        return new_table, removed_count
+        new_table = arrow_table.drop_columns(to_remove)
+        return new_table, len(to_remove)
     except Exception as e:
         logger.error(f"Failed to drop columns {columns_to_delete}: {e}")
         raise

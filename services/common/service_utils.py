@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from common.health import create_health_response
 from common.json_utils import NpEncoder
 from common.path_utils import ensure_dataset_dirs
-from flask import Response, g, jsonify, request
+from flask import Response, g, has_request_context, jsonify, request
 from prometheus_client import Counter, generate_latest
 
 # ── Prometheus helpers ──────────────────────────────────────────────
@@ -133,8 +133,4 @@ def save_metadata(service_name, dataset_name, extra_fields=None, start_time=None
 
 def _has_request_context():
     """Check whether we're inside a Flask request context."""
-    try:
-        _ = request.method  # noqa: F841
-        return True
-    except RuntimeError:
-        return False
+    return has_request_context()

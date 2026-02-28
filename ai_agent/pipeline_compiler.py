@@ -211,7 +211,6 @@ class PipelineCompiler:
             max_workers: Max threads for parallel step execution (default: 4).
         """
         self.prep = preparator
-        self.logger = logging.getLogger("PipelineCompiler")
         self.last_step_outputs: dict[str, bytes] = {}
         self.max_workers = max_workers
         self._dispatch = _build_dispatch_registry(preparator)
@@ -225,7 +224,7 @@ class PipelineCompiler:
             handler: Callable with signature (params, input_data, dataset_name, input_data_2) -> bytes.
         """
         self._dispatch[service_name] = handler
-        self.logger.info(f"Registered custom service handler: {service_name}")
+        logger.info(f"Registered custom service handler: {service_name}")
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -264,7 +263,7 @@ class PipelineCompiler:
         layers = _topological_layers(steps)
         parallel_layers = sum(1 for layer in layers if len(layer) > 1)
 
-        self.logger.info(
+        logger.info(
             f"Executing pipeline '{pipeline_name}' — {total_steps} steps in "
             f"{len(layers)} layers ({parallel_layers} parallel) "
             f"[correlation_id={result.correlation_id}]"
@@ -292,7 +291,7 @@ class PipelineCompiler:
                     completed_count += 1
             else:
                 # Multiple independent steps — execute in parallel
-                self.logger.info(
+                logger.info(
                     f"Layer {layer_idx + 1}: running {len(layer)} steps in parallel "
                     f"[{', '.join(s['id'] for s in layer)}]"
                 )
@@ -312,7 +311,7 @@ class PipelineCompiler:
             result.status = "completed"
 
         result.total_duration_sec = time.time() - start_time
-        self.logger.info(
+        logger.info(
             f"Pipeline '{pipeline_name}' {result.status} in {result.total_duration_sec:.2f}s"
         )
         return result
@@ -332,7 +331,7 @@ class PipelineCompiler:
         if progress_callback:
             progress_callback(step_id, "running", (completed_count / total_steps) * 100)
 
-        self.logger.info(f"Step [{completed_count + 1}/{total_steps}] {step_id}: {service}")
+        logger.info(f"Step [{completed_count + 1}/{total_steps}] {step_id}: {service}")
         step_start = time.time()
 
         try:
@@ -352,7 +351,7 @@ class PipelineCompiler:
             return sr
 
         except Exception as e:
-            self.logger.error(f"Step '{step_id}' failed: {e}")
+            logger.error(f"Step '{step_id}' failed: {e}")
             if progress_callback:
                 progress_callback(step_id, "error", (completed_count / total_steps) * 100)
             return StepResult(

@@ -122,6 +122,9 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
     has_extract = False
     has_load = False
 
+    # Collect all step IDs first so depends_on can forward-reference
+    all_step_ids = {step.get("id", f"step_{i}") for i, step in enumerate(pipeline["steps"])}
+
     for i, step in enumerate(pipeline["steps"]):
         step_id = step.get("id", f"step_{i}")
 
@@ -154,7 +157,7 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
 
         # Validate depends_on references
         for dep in step.get("depends_on", []):
-            if dep not in step_ids:
+            if dep not in all_step_ids:
                 errors.append(f"Step '{step_id}': depends_on references unknown step '{dep}'")
 
     if not has_extract:
@@ -176,7 +179,6 @@ class PipelineAgent:
         """
         self.llm = llm_provider
         self.system_prompt = _build_system_prompt()
-        self.schema = _load_pipeline_schema()
         self.registry = _load_service_registry()
         logger.info(f"Pipeline agent initialized with LLM: {llm_provider.name()}")
 

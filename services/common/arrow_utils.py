@@ -1,6 +1,7 @@
+import logging
+
 import pyarrow as pa
 import pyarrow.ipc as pa_ipc
-import logging
 
 logger = logging.getLogger(__name__)
 

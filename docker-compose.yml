@@ -3,15 +3,21 @@ services:
     image: postgres:latest
     container_name: postgres
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-strong-password}
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
     ports:
       - "5432:5432"
     volumes:
       - etl-postgres-data:/var/lib/postgresql/data
     networks:
       - etl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   airflow:
     build:
@@ -19,8 +25,10 @@ services:
       dockerfile: Dockerfile
     container_name: airflow
     depends_on:
-    - postgres
-    - statsd-exporter
+      postgres:
+        condition: service_healthy
+      statsd-exporter:
+        condition: service_started
     volumes:
       - etl-containers-shared-data:/app/data         # Shared Volume between containers for data
       - etl-data-airflow:/opt/airflow                # Volume for persistence of Airflow data
@@ -61,7 +69,7 @@ services:
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-change-me-strong-password}
     volumes:
       - etl-grafana-data:/var/lib/grafana
     ports:
@@ -208,14 +216,36 @@ services:
     container_name: text-completion-llm-service
     volumes:
       - etl-containers-shared-data:/app/data
-      # Mount the local folder 'hf-cache' with the weights of HF model in the container (usually in C:/user/.cache/huggingface)
+      # Mount local HuggingFace model cache (set HF_MODELS_PATH in .env)
       - type: bind
-        source: "D:/hf_models/"
+        source: "${HF_MODELS_PATH:-./hf_models}"
         target: "/root/.cache/huggingface"
     ports:
       - "5012:5012"
     networks:
       - etl-network
+    restart: always
+
+  streamlit-app:
+    build:
+      context: .
+      dockerfile: streamlit_app/Dockerfile
+    container_name: streamlit-app
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    volumes:
+      - etl-containers-shared-data:/app/data
+    ports:
+      - "8501:8501"
+    networks:
+      - etl-network
+    depends_on:
+      extract-csv-service:
+        condition: service_healthy
+      load-data-service:
+        condition: service_healthy
     restart: always
 
 networks:
@@ -228,4 +258,3 @@ volumes:
   etl-data-airflow:
   etl-grafana-data:
   etl-prometheus-data:
-  hf-cache:

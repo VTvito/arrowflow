@@ -28,3 +28,38 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets: ['extract-sql-service:5005']
+
+  - job_name: 'extract-api-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['extract-api-service:5006']
+
+  - job_name: 'extract-excel-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['extract-excel-service:5007']
+
+  - job_name: 'join-datasets-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['join-datasets-service:5008']
+
+  - job_name: 'load-data-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['load-data-service:5009']
+
+  - job_name: 'data-quality-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['data-quality-service:5010']
+
+  - job_name: 'outlier-detection-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['outlier-detection-service:5011']
+
+  - job_name: 'text-completion-llm-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['text-completion-llm-service:5012']

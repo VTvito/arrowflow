@@ -1,0 +1,56 @@
+# HR Analytics Pipeline
+# Load in Streamlit UI → YAML Editor, or trigger via AI Agent
+#
+# Uses the bundled demo dataset (hr_sample.csv).
+# Run `make demo-data` first to load demo data into containers.
+
+pipeline:
+  name: hr_analytics
+  description: >
+    HR People Analytics pipeline — extract the demo HR dataset,
+    run quality checks, remove low-variance columns, detect salary
+    outliers, clean missing values, and save the result.
+  steps:
+    - id: extract
+      service: extract_csv
+      params:
+        file_path: /app/data/hr_demo/data.csv
+
+    - id: quality
+      service: data_quality
+      params:
+        rules:
+          min_rows: 10
+          check_null_ratio: true
+          threshold_null_ratio: 0.5
+          check_duplicates: true
+          check_completeness: true
+      depends_on: [extract]
+
+    - id: drop_cols
+      service: delete_columns
+      params:
+        columns:
+          - EmployeeCount
+          - Over18
+          - StandardHours
+      depends_on: [quality]
+
+    - id: outliers
+      service: outlier_detection
+      params:
+        column: MonthlyIncome
+        z_threshold: 3.0
+      depends_on: [drop_cols]
+
+    - id: clean
+      service: clean_nan
+      params:
+        strategy: drop
+      depends_on: [outliers]
+
+    - id: save
+      service: load_data
+      params:
+        format: csv
+      depends_on: [clean]

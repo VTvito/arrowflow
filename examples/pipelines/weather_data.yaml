@@ -1,0 +1,45 @@
+# Weather Data Pipeline
+# Load in Streamlit UI → YAML Editor, or trigger via AI Agent
+#
+# Uses the Open-Meteo API (free, no API key required).
+# Demonstrates the extract-api-service with a real public endpoint.
+
+pipeline:
+  name: weather_data
+  description: >
+    Weather data pipeline — fetch 7-day hourly forecast from
+    Open-Meteo API for Rome, validate data quality, forward-fill
+    any missing values (natural for time series), and save as Parquet.
+  steps:
+    - id: extract
+      service: extract_api
+      params:
+        api_url: "https://api.open-meteo.com/v1/forecast"
+        api_params:
+          latitude: 41.9028
+          longitude: 12.4964
+          hourly: "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation"
+          timezone: "Europe/Rome"
+          forecast_days: 7
+
+    - id: quality
+      service: data_quality
+      params:
+        rules:
+          min_rows: 5
+          check_null_ratio: true
+          threshold_null_ratio: 0.5
+          check_completeness: true
+      depends_on: [extract]
+
+    - id: clean
+      service: clean_nan
+      params:
+        strategy: ffill
+      depends_on: [quality]
+
+    - id: save
+      service: load_data
+      params:
+        format: parquet
+      depends_on: [clean]

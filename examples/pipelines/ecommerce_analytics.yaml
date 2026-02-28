@@ -1,0 +1,52 @@
+# E-commerce Orders Pipeline
+# Load in Streamlit UI → YAML Editor, or trigger via AI Agent
+#
+# Uses the bundled demo dataset (ecommerce_orders.csv).
+# Run `make demo-data` first to load demo data into containers.
+
+pipeline:
+  name: ecommerce_analytics
+  description: >
+    E-commerce order analytics pipeline — extract orders data,
+    validate quality and completeness, detect price outliers,
+    fill missing numeric values with median, and save as Parquet.
+  steps:
+    - id: extract
+      service: extract_csv
+      params:
+        file_path: /app/data/ecommerce_demo/data.csv
+
+    - id: quality
+      service: data_quality
+      params:
+        rules:
+          min_rows: 10
+          check_null_ratio: true
+          threshold_null_ratio: 0.3
+          check_duplicates: true
+          check_completeness: true
+      depends_on: [extract]
+
+    - id: outliers
+      service: outlier_detection
+      params:
+        column: TotalAmount
+        z_threshold: 3.0
+      depends_on: [quality]
+
+    - id: clean
+      service: clean_nan
+      params:
+        strategy: fill_median
+        columns:
+          - Quantity
+          - UnitPrice
+          - Discount
+          - TotalAmount
+      depends_on: [outliers]
+
+    - id: save
+      service: load_data
+      params:
+        format: parquet
+      depends_on: [clean]

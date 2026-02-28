@@ -1,19 +1,48 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Environment ──
+.env
+.venv/
+venv/
+env/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Testing & Coverage ──
+.pytest_cache/
+htmlcov/
+coverage.xml
+.coverage
+
+# ── Linting ──
+.ruff_cache/
+
+# ── Model cache ──
+hf_models/
+
+# ── Benchmark artifacts ──
+benchmark/data/
+benchmark/results/
+
+# ── Airflow ──
 airflow/logs/
-airflow/dags/__pycache__/
-preparator/__pycache__/
 
-services/clean-nan-service/app/__pycache__/
-services/delete-columns-service/app/__pycache__/
-services/extract-csv-service/app/__pycache__/
-services/extract-sql-service/app/__pycache__/
-services/extract-excel-service/app/__pycache__/
-services/extract-api-service/app/__pycache__/
-services/data-quality-service/app/__pycache__/
-services/join-datasets-service/app/__pycache__/
-services/load-data-service/app/__pycache__/
-services/outlier-detection-service/app/__pycache__/
-
-otherfiles/
-
+# ── Data files (should not be committed) ──
 *.csv
 *.xlsx
+!data/demo/*.csv
+
+# ── Legacy/misc ──
+otherfiles/

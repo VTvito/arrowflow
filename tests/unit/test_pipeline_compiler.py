@@ -9,7 +9,7 @@ import pytest
 PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, PROJECT_ROOT)
 
-from ai_agent.pipeline_compiler import PipelineCompiler  # noqa: E402
+from ai_agent.pipeline_compiler import PipelineCompiler, _topological_layers  # noqa: E402
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,12 +40,12 @@ def _pipeline(steps, name="test_pipeline"):
     return {"pipeline": {"name": name, "description": "test", "steps": steps}}
 
 
-# ── _execute_step: service dispatch ──────────────────────────────────────────
+# ── _dispatch_step: service dispatch ─────────────────────────────────────────
 
-class TestExecuteStepDispatch:
+class TestDispatchStep:
     def test_extract_csv_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        result = compiler._execute_step(
+        result = compiler._dispatch_step(
             "extract_csv", {"file_path": "/data/file.csv"}, None, "my_dataset"
         )
         prep.extract_csv.assert_called_once_with(dataset_name="my_dataset", file_path="/data/file.csv")
@@ -53,14 +53,14 @@ class TestExecuteStepDispatch:
 
     def test_extract_excel_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "extract_excel", {"file_path": "/data/file.xlsx"}, None, "my_dataset"
         )
         prep.extract_excel.assert_called_once_with(dataset_name="my_dataset", file_path="/data/file.xlsx")
 
     def test_extract_api_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "extract_api",
             {"api_url": "https://api.example.com/data", "api_params": {"limit": 100}},
             None, "my_dataset",
@@ -75,14 +75,14 @@ class TestExecuteStepDispatch:
 
     def test_clean_nan_calls_correct_method_with_defaults(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step("clean_nan", {}, FAKE_IPC, "ds")
+        compiler._dispatch_step("clean_nan", {}, FAKE_IPC, "ds")
         prep.clean_nan.assert_called_once_with(
             FAKE_IPC, dataset_name="ds", strategy="drop", fill_value=None, columns=None
         )
 
     def test_clean_nan_passes_strategy_and_columns(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "clean_nan", {"strategy": "fill_median", "columns": ["age", "salary"]},
             FAKE_IPC, "ds",
         )
@@ -93,14 +93,14 @@ class TestExecuteStepDispatch:
 
     def test_delete_columns_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step("delete_columns", {"columns": ["col_a", "col_b"]}, FAKE_IPC, "ds")
+        compiler._dispatch_step("delete_columns", {"columns": ["col_a", "col_b"]}, FAKE_IPC, "ds")
         prep.delete_columns.assert_called_once_with(
             FAKE_IPC, columns=["col_a", "col_b"], dataset_name="ds"
         )
 
     def test_data_quality_default_fail_on_errors_false(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step("data_quality", {"rules": {"min_rows": 10}}, FAKE_IPC, "ds")
+        compiler._dispatch_step("data_quality", {"rules": {"min_rows": 10}}, FAKE_IPC, "ds")
         prep.check_quality.assert_called_once_with(
             FAKE_IPC, dataset_name="ds",
             rules={"min_rows": 10}, fail_on_errors=False,
@@ -108,7 +108,7 @@ class TestExecuteStepDispatch:
 
     def test_data_quality_with_fail_on_errors_true(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "data_quality", {"rules": {}, "fail_on_errors": True}, FAKE_IPC, "ds"
         )
         prep.check_quality.assert_called_once_with(
@@ -117,7 +117,7 @@ class TestExecuteStepDispatch:
 
     def test_outlier_detection_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "outlier_detection", {"column": "salary", "z_threshold": 2.5}, FAKE_IPC, "ds"
         )
         prep.detect_outliers.assert_called_once_with(
@@ -126,28 +126,95 @@ class TestExecuteStepDispatch:
 
     def test_load_data_calls_correct_method(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step("load_data", {"format": "parquet"}, FAKE_IPC, "ds")
+        compiler._dispatch_step("load_data", {"format": "parquet"}, FAKE_IPC, "ds")
         prep.load_data.assert_called_once_with(FAKE_IPC, format="parquet", dataset_name="ds")
 
     def test_unknown_service_raises_value_error(self):
         compiler, prep = _make_compiler()
         with pytest.raises(ValueError, match="Unknown service"):
-            compiler._execute_step("does_not_exist", {}, FAKE_IPC, "ds")
+            compiler._dispatch_step("does_not_exist", {}, FAKE_IPC, "ds")
 
     def test_join_datasets_requires_two_inputs(self):
         compiler, prep = _make_compiler()
         with pytest.raises(ValueError, match="join_datasets requires exactly 2"):
-            compiler._execute_step("join_datasets", {"join_key": "id"}, FAKE_IPC, "ds")
+            compiler._dispatch_step("join_datasets", {"join_key": "id"}, FAKE_IPC, "ds")
 
     def test_join_datasets_with_two_inputs(self):
         compiler, prep = _make_compiler()
-        compiler._execute_step(
+        compiler._dispatch_step(
             "join_datasets", {"join_key": "id", "join_type": "left"},
             FAKE_IPC, "ds", input_data_2=FAKE_IPC_2,
         )
         prep.join_datasets.assert_called_once_with(
             FAKE_IPC, FAKE_IPC_2, dataset_name="ds", join_key="id", join_type="left",
         )
+
+
+# ── Topological layers ───────────────────────────────────────────────────────
+
+class TestTopologicalLayers:
+    def test_linear_pipeline_produces_one_step_per_layer(self):
+        steps = [
+            {"id": "a", "service": "extract_csv"},
+            {"id": "b", "service": "clean_nan", "depends_on": ["a"]},
+            {"id": "c", "service": "load_data", "depends_on": ["b"]},
+        ]
+        layers = _topological_layers(steps)
+        assert len(layers) == 3
+        assert [len(l) for l in layers] == [1, 1, 1]
+
+    def test_parallel_extracts_grouped_in_same_layer(self):
+        steps = [
+            {"id": "ext1", "service": "extract_csv"},
+            {"id": "ext2", "service": "extract_excel"},
+            {"id": "join", "service": "join_datasets", "depends_on": ["ext1", "ext2"]},
+            {"id": "save", "service": "load_data", "depends_on": ["join"]},
+        ]
+        layers = _topological_layers(steps)
+        assert len(layers) == 3
+        # First layer has both extracts
+        first_ids = {s["id"] for s in layers[0]}
+        assert first_ids == {"ext1", "ext2"}
+
+    def test_diamond_dependency_produces_correct_layers(self):
+        steps = [
+            {"id": "a", "service": "extract_csv"},
+            {"id": "b", "service": "clean_nan", "depends_on": ["a"]},
+            {"id": "c", "service": "delete_columns", "depends_on": ["a"]},
+            {"id": "d", "service": "load_data", "depends_on": ["b", "c"]},
+        ]
+        layers = _topological_layers(steps)
+        assert len(layers) == 3
+        middle_ids = {s["id"] for s in layers[1]}
+        assert middle_ids == {"b", "c"}
+
+    def test_cycle_raises_value_error(self):
+        steps = [
+            {"id": "a", "service": "extract_csv", "depends_on": ["b"]},
+            {"id": "b", "service": "clean_nan", "depends_on": ["a"]},
+        ]
+        with pytest.raises(ValueError, match="cycle"):
+            _topological_layers(steps)
+
+
+# ── register_service ─────────────────────────────────────────────────────────
+
+class TestRegisterService:
+    def test_register_custom_service_and_dispatch(self):
+        compiler, prep = _make_compiler()
+        custom_handler = MagicMock(return_value=b"custom_output")
+        compiler.register_service("my_custom_service", custom_handler)
+        result = compiler._dispatch_step("my_custom_service", {"key": "val"}, FAKE_IPC, "ds")
+        custom_handler.assert_called_once_with({"key": "val"}, FAKE_IPC, "ds", None)
+        assert result == b"custom_output"
+
+    def test_register_overwrites_existing(self):
+        compiler, prep = _make_compiler()
+        custom = MagicMock(return_value=b"overridden")
+        compiler.register_service("extract_csv", custom)
+        result = compiler._dispatch_step("extract_csv", {"file_path": "/x"}, None, "ds")
+        custom.assert_called_once()
+        assert result == b"overridden"
 
 
 # ── execute(): full pipeline run ─────────────────────────────────────────────
@@ -244,3 +311,23 @@ class TestExecutePipeline:
         assert d["status"] == "completed"
         assert isinstance(d["total_duration_sec"], float)
         assert len(d["steps"]) == 2
+
+    def test_parallel_extracts_both_execute(self):
+        """Two independent extracts should both execute and feed a join."""
+        compiler, prep = _make_compiler()
+        prep.extract_csv.return_value = b"csv_data"
+        prep.extract_excel.return_value = b"excel_data"
+        pipeline = _pipeline([
+            {"id": "ext_csv", "service": "extract_csv", "params": {"file_path": "/a.csv"}},
+            {"id": "ext_xl", "service": "extract_excel", "params": {"file_path": "/b.xlsx"}},
+            {"id": "merge", "service": "join_datasets", "params": {"join_key": "id"},
+             "depends_on": ["ext_csv", "ext_xl"]},
+            {"id": "save", "service": "load_data", "params": {"format": "csv"},
+             "depends_on": ["merge"]},
+        ])
+        result = compiler.execute(pipeline)
+        assert result.status == "completed"
+        assert len(result.steps) == 4
+        prep.extract_csv.assert_called_once()
+        prep.extract_excel.assert_called_once()
+        prep.join_datasets.assert_called_once()

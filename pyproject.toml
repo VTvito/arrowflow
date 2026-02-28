@@ -1,0 +1,61 @@
+[project]
+name = "etl-microservices"
+version = "1.0.0"
+description = "AI-assisted modular ETL platform with microservices architecture"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+
+dependencies = [
+    "flask>=3.0",
+    "pyarrow>=14.0",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "prometheus_client>=0.19",
+    "requests>=2.31",
+    "gunicorn>=21.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "xlsxwriter>=3.1",
+    "openpyxl>=3.1",
+]
+ai = [
+    "openai>=1.0",
+    "pyyaml>=6.0",
+    "streamlit>=1.30",
+    "plotly>=5.18",
+]
+benchmark = [
+    "matplotlib>=3.7",
+    "plotly>=5.18",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+exclude = ["templates/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.coverage.run]
+source = ["services", "preparator", "ai_agent"]
+omit = ["tests/*", "*/run.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 60

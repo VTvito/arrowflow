@@ -15,7 +15,8 @@ for _mod in list(sys.modules):
         del sys.modules[_mod]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "load-data-service"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services"))
-from app.load import load_arrow_to_format  # noqa: E402
+from app.load import load_arrow_to_format, save_output_file  # noqa: E402
+from app import load as _load_module  # noqa: E402
 
 
 class TestLoadArrowToFormat:
@@ -70,3 +71,31 @@ class TestLoadArrowToFormat:
     def test_invalid_format_type_none(self, sample_arrow_table):
         with pytest.raises(ValueError, match="Unsupported format"):
             load_arrow_to_format(sample_arrow_table, None)
+
+
+class TestSaveOutputFile:
+    def test_creates_file(self, tmp_path, monkeypatch):
+        """save_output_file writes data and returns the file path."""
+        monkeypatch.setattr(
+            _load_module, "ensure_dataset_dirs",
+            lambda name: (str(tmp_path / name), str(tmp_path / name / "metadata")),
+        )
+
+        data = b"id,name\n1,Alice\n"
+        path = save_output_file(data, "test_ds", "csv")
+        assert os.path.isfile(path)
+        assert path.endswith(".csv")
+        with open(path, "rb") as f:
+            assert f.read() == data
+
+    def test_filename_contains_timestamp(self, tmp_path, monkeypatch):
+        """Output filename follows the step_load_<timestamp>.<ext> pattern."""
+        monkeypatch.setattr(
+            _load_module, "ensure_dataset_dirs",
+            lambda name: (str(tmp_path / name), str(tmp_path / name / "metadata")),
+        )
+
+        path = save_output_file(b"{}", "ts_test", "json")
+        basename = os.path.basename(path)
+        assert basename.startswith("step_load_")
+        assert basename.endswith(".json")

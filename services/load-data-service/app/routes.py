@@ -1,9 +1,8 @@
 import logging
-import os
 import time
 
 from common.arrow_utils import ipc_to_table
-from common.path_utils import ensure_dataset_dirs, sanitize_dataset_name
+from common.path_utils import sanitize_dataset_name
 from common.service_utils import (
     create_service_counters,
     get_correlation_id,
@@ -13,7 +12,7 @@ from common.service_utils import (
 )
 from flask import Blueprint, jsonify, request
 
-from app.load import load_arrow_to_format
+from app.load import load_arrow_to_format, save_output_file
 
 bp = Blueprint('load-data', __name__)
 logger = logging.getLogger('load-data-service')
@@ -62,23 +61,12 @@ def load_data():
 
         converted_data = load_arrow_to_format(arrow_table, format_type)
 
+        # Persist to shared volume
+        file_path = save_output_file(converted_data, dataset_name, format_type)
+
         SUCCESS_COUNTER.inc()
         logger.info(f"Successfully converted data to {format_type} format.",
                     extra={"correlation_id": correlation_id, "dataset_name": dataset_name})
-
-        # Save processed file
-        dataset_folder, _ = ensure_dataset_dirs(dataset_name)
-        processed_dir = os.path.join(dataset_folder, "processed")
-        os.makedirs(processed_dir, exist_ok=True)
-
-        from datetime import datetime, timezone
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        filename = f"step_load_{timestamp}.{format_type.lower()}"
-        file_path = os.path.join(processed_dir, filename)
-
-        with open(file_path, 'wb') as f:
-            f.write(converted_data)
-        logger.info(f"Saved data to {file_path}", extra={"correlation_id": correlation_id})
 
         save_metadata("load-data", dataset_name, {
             "rows_in": rows_in, "cols_in": cols_in,

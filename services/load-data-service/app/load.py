@@ -1,8 +1,11 @@
 import io
 import logging
+import os
+from datetime import datetime, timezone
 
 import pandas as pd
 import pyarrow.parquet as pq
+from common.path_utils import ensure_dataset_dirs
 
 logger = logging.getLogger('load-data-service')
 
@@ -50,3 +53,30 @@ def load_arrow_to_format(arrow_table, format_type):
     except Exception as e:
         logger.error(f"Failed to convert data: {e}")
         raise
+
+
+def save_output_file(data: bytes, dataset_name: str, format_type: str) -> str:
+    """
+    Persist converted data to the shared volume under the dataset's processed/ folder.
+
+    Args:
+        data: Converted bytes to write (CSV, JSON, XLSX, Parquet).
+        dataset_name: Sanitized dataset identifier.
+        format_type: File extension / format name.
+
+    Returns:
+        Absolute path of the written file.
+    """
+    dataset_folder, _ = ensure_dataset_dirs(dataset_name)
+    processed_dir = os.path.join(dataset_folder, "processed")
+    os.makedirs(processed_dir, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"step_load_{timestamp}.{format_type.lower()}"
+    file_path = os.path.join(processed_dir, filename)
+
+    with open(file_path, 'wb') as f:
+        f.write(data)
+
+    logger.info(f"Saved output file: {file_path}")
+    return file_path

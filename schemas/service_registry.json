@@ -1,0 +1,160 @@
+{
+  "services": {
+    "extract_csv": {
+      "name": "Extract CSV",
+      "description": "Reads a CSV file from the shared volume and returns Arrow IPC data",
+      "type": "extract",
+      "endpoint": "/extract-csv",
+      "input_format": "json",
+      "output_format": "arrow_ipc",
+      "params": {
+        "file_path": { "type": "string", "required": true, "description": "Path to the CSV file (e.g. /app/data/myfile.csv)" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "extract_excel": {
+      "name": "Extract Excel",
+      "description": "Reads an Excel (.xlsx/.xls) file and returns Arrow IPC data",
+      "type": "extract",
+      "endpoint": "/extract-excel",
+      "input_format": "json",
+      "output_format": "arrow_ipc",
+      "params": {
+        "file_path": { "type": "string", "required": true, "description": "Path to the Excel file" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "extract_api": {
+      "name": "Extract from API",
+      "description": "Fetches data from a REST API endpoint and returns Arrow IPC data",
+      "type": "extract",
+      "endpoint": "/extract-api",
+      "input_format": "json",
+      "output_format": "arrow_ipc",
+      "params": {
+        "api_url": { "type": "string", "required": true, "description": "Full URL of the API endpoint" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" },
+        "api_params": { "type": "object", "required": false, "default": {}, "description": "Query parameters for the API call" },
+        "auth_type": { "type": "string", "required": false, "enum": ["api_key", null], "description": "Authentication type (only 'api_key' supported)" },
+        "auth_value": { "type": "string", "required": false, "description": "Authentication value (API key)" }
+      }
+    },
+    "extract_sql": {
+      "name": "Extract from SQL",
+      "description": "Executes a SQL query and returns the result as Arrow IPC data",
+      "type": "extract",
+      "endpoint": "/extract-sql",
+      "input_format": "json",
+      "output_format": "arrow_ipc",
+      "params": {
+        "db_url": { "type": "string", "required": true, "description": "SQLAlchemy connection string" },
+        "query": { "type": "string", "required": true, "description": "SQL query to execute" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "clean_nan": {
+      "name": "Clean NaN",
+      "description": "Handles null/NaN values using configurable strategies: drop rows, fill with mean/median/mode, fill with a fixed value, or forward/backward fill",
+      "type": "transform",
+      "endpoint": "/clean-nan",
+      "input_format": "arrow_ipc",
+      "output_format": "arrow_ipc",
+      "params": {
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" },
+        "strategy": { "type": "string", "required": false, "default": "drop", "enum": ["drop", "fill_mean", "fill_median", "fill_mode", "fill_value", "ffill", "bfill"], "description": "Strategy for handling nulls (default: drop)" },
+        "fill_value": { "type": "any", "required": false, "default": null, "description": "Value to fill when strategy is 'fill_value'" },
+        "columns": { "type": "array", "items": "string", "required": false, "default": null, "description": "Columns to apply the strategy to (null = all columns)" }
+      }
+    },
+    "delete_columns": {
+      "name": "Delete Columns",
+      "description": "Removes specified columns from the dataset",
+      "type": "transform",
+      "endpoint": "/delete-columns",
+      "input_format": "arrow_ipc",
+      "output_format": "arrow_ipc",
+      "params": {
+        "columns": { "type": "array", "items": "string", "required": true, "description": "List of column names to remove" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "data_quality": {
+      "name": "Data Quality Check",
+      "description": "Runs quality checks (min rows, null ratio, duplicates, column types, uniqueness, value ranges, completeness) and passes data through",
+      "type": "transform",
+      "endpoint": "/data-quality",
+      "input_format": "arrow_ipc",
+      "output_format": "arrow_ipc",
+      "params": {
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" },
+        "rules": {
+          "type": "object", "required": false, "description": "Quality rules object",
+          "properties": {
+            "min_rows": { "type": "integer", "description": "Minimum number of rows required" },
+            "check_null_ratio": { "type": "boolean", "description": "Whether to check null ratio" },
+            "threshold_null_ratio": { "type": "number", "description": "Maximum acceptable null ratio (0.0-1.0)" },
+            "check_duplicates": { "type": "boolean", "description": "Whether to check for duplicate rows" },
+            "check_column_types": { "type": "object", "description": "Map of column_name -> expected type (numeric, string, datetime)" },
+            "check_unique_columns": { "type": "array", "items": "string", "description": "Columns that must have all unique values" },
+            "check_value_range": { "type": "object", "description": "Map of column_name -> {min, max} expected range" },
+            "check_completeness": { "type": "boolean", "description": "Generate per-column completeness report" }
+          }
+        },
+        "fail_on_errors": { "type": "boolean", "required": false, "default": false, "description": "If true, abort the pipeline with HTTP 422 when any quality check fails" }
+      }
+    },
+    "outlier_detection": {
+      "name": "Outlier Detection",
+      "description": "Detects and removes outliers using Z-score method on a specified numeric column",
+      "type": "transform",
+      "endpoint": "/outlier-detection",
+      "input_format": "arrow_ipc",
+      "output_format": "arrow_ipc",
+      "params": {
+        "column": { "type": "string", "required": true, "description": "Name of the numeric column for Z-score analysis" },
+        "z_threshold": { "type": "number", "required": false, "default": 3.0, "description": "Z-score threshold (default: 3.0)" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "join_datasets": {
+      "name": "Join Datasets",
+      "description": "Joins two datasets using a specified key and join type (inner/left/right/outer)",
+      "type": "transform",
+      "endpoint": "/join-datasets",
+      "input_format": "multipart",
+      "output_format": "arrow_ipc",
+      "params": {
+        "join_key": { "type": "string", "required": true, "description": "Column name to join on" },
+        "join_type": { "type": "string", "required": false, "default": "inner", "enum": ["inner", "left", "right", "outer"], "description": "Join type" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the output dataset" }
+      }
+    },
+    "text_completion_llm": {
+      "name": "Text Completion (LLM)",
+      "description": "Uses a language model to fill missing text placeholders in a column",
+      "type": "transform",
+      "endpoint": "/text-completion-llm",
+      "input_format": "arrow_ipc",
+      "output_format": "arrow_ipc",
+      "params": {
+        "text_column": { "type": "string", "required": true, "description": "Column containing text with placeholders" },
+        "missing_placeholder": { "type": "string", "required": true, "default": "[MISSING]", "description": "Placeholder string to replace" },
+        "max_tokens": { "type": "integer", "required": false, "default": 20, "description": "Max tokens to generate per replacement" },
+        "max_rows": { "type": "integer", "required": false, "default": null, "description": "Max rows to process (null = all)" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset" }
+      }
+    },
+    "load_data": {
+      "name": "Load Data",
+      "description": "Saves the dataset to disk in the specified format (CSV, XLSX, JSON, Parquet)",
+      "type": "load",
+      "endpoint": "/load-data",
+      "input_format": "arrow_ipc",
+      "output_format": "json",
+      "params": {
+        "format": { "type": "string", "required": true, "enum": ["csv", "xlsx", "xls", "json", "parquet"], "description": "Output file format" },
+        "dataset_name": { "type": "string", "required": true, "description": "Logical name for the dataset (determines output path)" }
+      }
+    }
+  }
+}

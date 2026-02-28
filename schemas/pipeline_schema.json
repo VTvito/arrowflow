@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ETL Pipeline Definition",
+  "description": "Schema for defining composable ETL pipelines. Used by the AI agent and Streamlit UI to generate and validate pipeline configurations.",
+  "type": "object",
+  "required": ["pipeline"],
+  "properties": {
+    "pipeline": {
+      "type": "object",
+      "required": ["name", "steps"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique pipeline name (used as dataset_name across services)",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable pipeline description"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "service"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique step identifier within the pipeline"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "extract_csv",
+                  "extract_excel",
+                  "extract_api",
+                  "extract_sql",
+                  "clean_nan",
+                  "delete_columns",
+                  "data_quality",
+                  "outlier_detection",
+                  "join_datasets",
+                  "text_completion_llm",
+                  "load_data"
+                ],
+                "description": "The ETL microservice to invoke"
+              },
+              "params": {
+                "type": "object",
+                "description": "Service-specific parameters"
+              },
+              "depends_on": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Step IDs that must complete before this step runs"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "pipeline": {
+        "name": "hr_analytics",
+        "description": "HR employee data cleaning and quality check pipeline",
+        "steps": [
+          {
+            "id": "extract",
+            "service": "extract_csv",
+            "params": { "file_path": "/app/data/hr_employees.csv" }
+          },
+          {
+            "id": "quality",
+            "service": "data_quality",
+            "params": { "rules": { "min_rows": 100, "check_null_ratio": true, "threshold_null_ratio": 0.3 } },
+            "depends_on": ["extract"]
+          },
+          {
+            "id": "remove_cols",
+            "service": "delete_columns",
+            "params": { "columns": ["EmployeeCount", "Over18", "StandardHours"] },
+            "depends_on": ["quality"]
+          },
+          {
+            "id": "outliers",
+            "service": "outlier_detection",
+            "params": { "column": "MonthlyIncome", "z_threshold": 3.0 },
+            "depends_on": ["remove_cols"]
+          },
+          {
+            "id": "clean",
+            "service": "clean_nan",
+            "depends_on": ["outliers"]
+          },
+          {
+            "id": "save",
+            "service": "load_data",
+            "params": { "format": "csv" },
+            "depends_on": ["clean"]
+          }
+        ]
+      }
+    }
+  ]
+}

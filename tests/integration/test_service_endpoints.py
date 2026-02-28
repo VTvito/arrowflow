@@ -6,6 +6,7 @@ Uses Flask test client — no Docker or network needed.
 import json
 import os
 import sys
+import tempfile
 
 import pytest
 from prometheus_client import REGISTRY
@@ -39,7 +40,11 @@ def _clear_app_modules():
 # ── Fixtures: Flask test clients ──
 
 @pytest.fixture
-def clean_nan_client():
+def clean_nan_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("ETL_DATA_ROOT", str(tmp_path))
+    # Reload path_utils so it picks up the new ETL_DATA_ROOT
+    import common.path_utils as _pu
+    monkeypatch.setattr(_pu, "DATA_ROOT", str(tmp_path))
     _clear_app_modules()
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "clean-nan-service"))
     from app import create_app

@@ -59,10 +59,10 @@ def load_data():
         rows_in = arrow_table.num_rows
         cols_in = arrow_table.num_columns
 
-        converted_data = load_arrow_to_format(arrow_table, format_type)
+        converted_data, actual_format = load_arrow_to_format(arrow_table, format_type)
 
-        # Persist to shared volume
-        file_path = save_output_file(converted_data, dataset_name, format_type)
+        # Persist to shared volume (use actual_format e.g. xls→xlsx)
+        file_path = save_output_file(converted_data, dataset_name, actual_format)
 
         SUCCESS_COUNTER.inc()
         logger.info(f"Successfully converted data to {format_type} format.",

@@ -29,7 +29,11 @@ def extract_excel():
         REQUEST_COUNTER.inc()
         logger.info("Received /extract-excel request.", extra={"correlation_id": correlation_id})
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if data is None:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Invalid or missing JSON body"}), 400
+
         dataset_name = data.get('dataset_name')
         file_path = data.get('file_path')
 

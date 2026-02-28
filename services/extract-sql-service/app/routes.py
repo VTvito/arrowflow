@@ -11,7 +11,7 @@ from common.service_utils import (
 )
 from flask import Blueprint, Response, jsonify, request
 
-from app.extract import extract_from_sql, redact_db_url, validate_sql_query
+from app.extract import extract_from_sql, redact_db_url
 
 bp = Blueprint('extract-sql', __name__)
 logger = logging.getLogger('extract-sql-service')
@@ -29,7 +29,11 @@ def extract_data():
         REQUEST_COUNTER.inc()
         logger.info("Received /extract-sql request.", extra={"correlation_id": correlation_id})
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if data is None:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Invalid or missing JSON body"}), 400
+
         dataset_name = data.get('dataset_name')
         query = data.get('query')
         db_url = data.get('db_url')
@@ -43,7 +47,6 @@ def extract_data():
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         dataset_name = sanitize_dataset_name(dataset_name)
-        query = validate_sql_query(query)
         db_url_redacted = redact_db_url(db_url)
 
         logger.info(f"Extracting from SQL source for dataset '{dataset_name}'",

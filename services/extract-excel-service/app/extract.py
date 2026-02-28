@@ -29,4 +29,4 @@ def process_excel(file_path):
         )
         return arrow_table
     except Exception as e:
-        raise ValueError(f"Erro during Excel file elaboration: {str(e)}")
+        raise ValueError(f"Error during Excel processing: {str(e)}") from e

@@ -26,50 +26,68 @@ def get_text_generator():
     return _text_generator
 
 
+# Maximum number of placeholder replacements per row to prevent infinite loops
+_MAX_REPLACEMENTS_PER_ROW = 50
+
+
 def fill_missing_text(df, text_col, max_tokens, missing_placeholder, max_rows=None):
-  """
-  Searches for a specified placeholder (e.g. "[MISSING]") in the `text_col` column and generates completions for it.
+    """
+    Searches for a specified placeholder (e.g. "[MISSING]") in the `text_col` column
+    and generates completions for it.
 
-  Parameters:
-    - df (pd.DataFrame): Input DataFrame
-    - text_col (str): Name of the column containing texts
-    - max_tokens (int): Maximum number of tokens to generate
-    - missing_placeholder (str): The placeholder to search for (e.g. "[MISSING]")
-    - max_rows (int|None): Maximum number of rows to process. None = all rows.
+    Parameters:
+        df (pd.DataFrame): Input DataFrame.
+        text_col (str): Name of the column containing texts.
+        max_tokens (int): Maximum number of tokens to generate.
+        missing_placeholder (str): The placeholder to search for (e.g. "[MISSING]").
+        max_rows (int|None): Maximum number of rows to process. None = all rows.
 
-  Returns:
-    - (modified_df, number_of_replacements, prompt_template)
-  """
-  if text_col not in df.columns:
-    logger.warning(f"Column '{text_col}' not found => skipping text completion.")
-    return (df, 0, None)
+    Returns:
+        Tuple of (modified_df, number_of_replacements, prompt_template).
+    """
+    if text_col not in df.columns:
+        logger.warning(f"Column '{text_col}' not found => skipping text completion.")
+        return (df, 0, None)
 
-  text_gen = get_text_generator()
+    text_gen = get_text_generator()
 
-  prompt_template = ("Read the the following text and replace {placeholder} with another natural word or phrase:\n"
-                    "Text: {input_text}\n"
-                    "Completion:")
+    prompt_template = (
+        "Read the following text and replace {placeholder} "
+        "with another natural word or phrase:\n"
+        "Text: {input_text}\n"
+        "Completion:"
+    )
 
-  total_completed = 0
-  rows_processed = 0
-  row_limit = max_rows if max_rows is not None else float('inf')
+    total_completed = 0
+    rows_processed = 0
+    row_limit = max_rows if max_rows is not None else float('inf')
 
-  for idx, row in df.iterrows():
-    text = row[text_col]
-    if not isinstance(text, str):
-      continue
+    for idx, row in df.iterrows():
+        text = row[text_col]
+        if not isinstance(text, str):
+            continue
 
-    if missing_placeholder in text and rows_processed < row_limit:
-      # Process placeholders in actual row
-      while missing_placeholder in text:
-        prompt = prompt_template.format(input_text=text, placeholder=missing_placeholder)
-        generated = text_gen(prompt, max_new_tokens=max_tokens, temperature=0.5)[0]['generated_text']
-        # Remove the prompt to obtain only the completion text
-        completion_str = generated.replace(prompt, "").strip()
-        text = text.replace(missing_placeholder, completion_str, 1)
-        total_completed += 1
-      rows_processed += 1
+        if missing_placeholder in text and rows_processed < row_limit:
+            replacements_in_row = 0
+            while missing_placeholder in text:
+                if replacements_in_row >= _MAX_REPLACEMENTS_PER_ROW:
+                    logger.warning(
+                        f"Row {idx}: hit replacement limit ({_MAX_REPLACEMENTS_PER_ROW}), "
+                        "remaining placeholders left as-is."
+                    )
+                    break
+                prompt = prompt_template.format(
+                    input_text=text, placeholder=missing_placeholder
+                )
+                generated = text_gen(
+                    prompt, max_new_tokens=max_tokens, temperature=0.5
+                )[0]["generated_text"]
+                completion_str = generated.replace(prompt, "").strip()
+                text = text.replace(missing_placeholder, completion_str, 1)
+                total_completed += 1
+                replacements_in_row += 1
+            rows_processed += 1
 
-    df.at[idx, text_col] = text
+        df.at[idx, text_col] = text
 
-  return (df, total_completed, prompt_template)
+    return (df, total_completed, prompt_template)

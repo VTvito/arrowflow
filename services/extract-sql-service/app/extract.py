@@ -42,12 +42,28 @@ def redact_db_url(db_url):
     except Exception:
         return "invalid-db-url"
 
+_ALLOWED_DB_SCHEMES = {"postgresql", "postgresql+psycopg2", "mysql", "mysql+pymysql",
+                       "mssql", "mssql+pyodbc", "oracle", "oracle+cx_oracle"}
+
+
 def extract_from_sql(db_url, query):
     """
     Execute a SQL query using SQLAlchemy put it into DataFrame and return Arrow Table.
+    The query is validated before execution and only allow-listed DB schemes are accepted.
     """
     try:
+        # Validate query (callers may pre-validate; this is idempotent)
         safe_query = validate_sql_query(query)
+
+        # Restrict database scheme to prevent file-based access (e.g. sqlite)
+        parsed_url = make_url(db_url)
+        scheme = parsed_url.get_backend_name()
+        if scheme not in _ALLOWED_DB_SCHEMES:
+            raise ValueError(
+                f"Database scheme '{scheme}' is not allowed. "
+                f"Allowed: {sorted(_ALLOWED_DB_SCHEMES)}"
+            )
+
         engine = create_engine(db_url)
         with engine.connect() as connection:
             df = pd.read_sql(safe_query, connection)
@@ -57,5 +73,7 @@ def extract_from_sql(db_url, query):
             f"{arrow_table.num_rows} rows, {arrow_table.num_columns} columns."
         )
         return arrow_table
+    except (ValueError, ConnectionError):
+        raise
     except Exception as e:
-        raise ConnectionError(f"Error during query execution: {e}")
+        raise ConnectionError(f"Error during query execution: {e}") from e

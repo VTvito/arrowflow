@@ -4,6 +4,8 @@ import os
 import socket
 from urllib.parse import urlparse
 
+import json
+
 import pandas as pd
 import pyarrow as pa
 import requests
@@ -58,6 +60,8 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
 
         # Configure header of auth (optional)
         if auth_type is not None:
+            if auth_value is None:
+                raise ValueError(f"auth_value is required when auth_type='{auth_type}'")
             if auth_type == "api_key":
                 headers["x-api-key"] = auth_value
             else:
@@ -68,7 +72,14 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
         response.raise_for_status()
 
         # Convert the response in DataFrame
-        df = pd.json_normalize(response.json())
+        try:
+            body = response.json()
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"API returned non-JSON response (status {response.status_code})"
+            ) from e
+
+        df = pd.json_normalize(body)
 
         # Convert pandas DataFrame to Arrow Table
         arrow_table = pa.Table.from_pandas(df)
@@ -79,4 +90,4 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
         return arrow_table
 
     except requests.RequestException as e:
-        raise ValueError(f"API Error: {str(e)}")
+        raise ValueError(f"API Error: {str(e)}") from e

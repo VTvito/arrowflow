@@ -25,7 +25,7 @@ def load_arrow_to_format(arrow_table, format_type):
             output = io.BytesIO()
             pq.write_table(arrow_table, output, compression='snappy')
             logger.info("Converted Arrow Table to Parquet format (snappy compression).")
-            return output.getvalue()
+            return output.getvalue(), normalized_format
 
         df = arrow_table.to_pandas()
         logger.info(f"Converted Arrow Table to Pandas DataFrame with {df.shape[0]} rows and {df.shape[1]} columns.")
@@ -33,19 +33,23 @@ def load_arrow_to_format(arrow_table, format_type):
         if normalized_format == 'csv':
             output = df.to_csv(index=False)
             logger.info("Converted DataFrame to CSV format.")
-            return output.encode('utf-8')
+            return output.encode('utf-8'), normalized_format
 
-        elif normalized_format == 'xlsx' or normalized_format == 'xls':
+        elif normalized_format in ('xlsx', 'xls'):
+            # xlsxwriter always produces .xlsx; normalise so callers
+            # (including save_output_file) use the correct extension.
+            if normalized_format == 'xls':
+                logger.info("Normalising format 'xls' → 'xlsx' (xlsxwriter output).")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')
             logger.info("Converted DataFrame to Excel format.")
-            return output.getvalue()
+            return output.getvalue(), 'xlsx'
 
         elif normalized_format == 'json':
             output = df.to_json(orient='records')
             logger.info("Converted DataFrame to JSON format.")
-            return output.encode('utf-8')
+            return output.encode('utf-8'), normalized_format
 
         else:
             logger.error(f"Unsupported format: {format_type}")

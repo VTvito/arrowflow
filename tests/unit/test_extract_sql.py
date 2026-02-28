@@ -11,7 +11,7 @@ for _mod in list(sys.modules):
         del sys.modules[_mod]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "extract-sql-service"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services"))
-from app.extract import redact_db_url, validate_sql_query  # noqa: E402
+from app.extract import redact_db_url, validate_sql_query, _ALLOWED_DB_SCHEMES  # noqa: E402
 
 
 # ── SQL validation ───────────────────────────────────────────────────────────
@@ -89,3 +89,13 @@ class TestRedactDbUrl:
         result = redact_db_url("not-a-valid-url")
         # Should not raise, returns fallback
         assert isinstance(result, str)
+
+
+# ── DB scheme restriction ────────────────────────────────────────────────────
+
+class TestAllowedDbSchemes:
+    def test_postgresql_allowed(self):
+        assert "postgresql" in _ALLOWED_DB_SCHEMES
+
+    def test_sqlite_not_allowed(self):
+        assert "sqlite" not in _ALLOWED_DB_SCHEMES

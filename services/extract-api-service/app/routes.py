@@ -29,7 +29,11 @@ def api_extraction():
         REQUEST_COUNTER.inc()
         logger.info("Received /extract-api request.", extra={"correlation_id": correlation_id})
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if data is None:
+            ERROR_COUNTER.inc()
+            return jsonify({"status": "error", "message": "Invalid or missing JSON body"}), 400
+
         dataset_name = data.get('dataset_name')
         api_url = data.get('api_url')
         api_params = data.get('api_params', {})

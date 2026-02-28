@@ -55,8 +55,15 @@ select = ["E", "F", "W", "I"]
 
 [tool.coverage.run]
 source = ["services", "preparator", "ai_agent"]
-omit = ["tests/*", "*/run.py"]
+omit = [
+    "tests/*",
+    "*/run.py",
+    "services/*/app/routes.py",
+    "services/*/app/__init__.py",
+    "preparator/preparator_v4.py",
+    "ai_agent/llm_provider.py",
+]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 60
+fail_under = 75

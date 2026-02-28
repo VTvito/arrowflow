@@ -1,9 +1,10 @@
-from airflow import DAG
+import json
+from datetime import datetime
+
 from airflow.decorators import task
 from airflow.models.param import Param
-from datetime import datetime
-import json
-import os
+
+from airflow import DAG
 from preparator.preparator_v4 import Preparator
 
 default_args = {
@@ -12,7 +13,8 @@ default_args = {
     'retries': 1,
 }
 
-CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json mapping configuration file in Airflow container
+# Path of .json mapping configuration file in Airflow container
+CONFIG_PATH = '/opt/airflow/preparator/services_config.json'
 with DAG(
     "parametrized_preparator_v4_quality",
     default_args=default_args,
@@ -41,10 +43,17 @@ with DAG(
 
         # Exec. of pipeline
         ipc_data = prep.extract_csv(dataset_name=dataset_name, file_path=file_path)
-        dq_data = prep.check_quality(ipc_data, dataset_name, rules={"min_rows": 1,"check_null_ratio": True,"threshold_null_ratio": 0.5})
+        dq_data = prep.check_quality(
+            ipc_data, dataset_name,
+            rules={
+                "min_rows": 1,
+                "check_null_ratio": True,
+                "threshold_null_ratio": 0.5,
+            },
+        )
         outlier_data = prep.detect_outliers(dq_data, dataset_name, column="Height", z_threshold=3.0)
         cleaned_data = prep.clean_nan(outlier_data, dataset_name=dataset_name)
-        final_data = prep.load_data(cleaned_data, format=output_format, dataset_name=dataset_name)
+        prep.load_data(cleaned_data, format=output_format, dataset_name=dataset_name)
 
         print(f"Pipeline for dataset '{dataset_name}' completed, using file '{file_path}'.")
 

@@ -1,11 +1,11 @@
-from airflow import DAG
+import json
+from datetime import datetime
+
 from airflow.decorators import task
 from airflow.models.param import Param
-from datetime import datetime
-import json
-import os
-from preparator.preparator_v4 import Preparator
 
+from airflow import DAG
+from preparator.preparator_v4 import Preparator
 
 default_args = {
     'owner': 'airflow',
@@ -13,7 +13,8 @@ default_args = {
     'retries': 1,
 }
 
-CONFIG_PATH = '/opt/airflow/preparator/services_config.json'  # Path of .json mapping configuration file in Airflow container
+# Path of .json mapping configuration file in Airflow container
+CONFIG_PATH = '/opt/airflow/preparator/services_config.json'
 
 with DAG(
     "parametrized_preparator_v4_ia",
@@ -45,14 +46,21 @@ with DAG(
 
         # Exec. of pipeline
         ipc_data = prep.extract_csv(dataset_name=dataset_name, file_path=file_path)
-        dq_data = prep.check_quality(ipc_data, dataset_name, rules={"min_rows": 1,"check_null_ratio": True,"threshold_null_ratio": 0.5})
+        dq_data = prep.check_quality(
+            ipc_data, dataset_name,
+            rules={
+                "min_rows": 1,
+                "check_null_ratio": True,
+                "threshold_null_ratio": 0.5,
+            },
+        )
         completed_data = prep.text_completion_llm(
             dq_data,
             dataset_name=dataset_name,
             text_column=column_to_complete,
             max_tokens=3,
             missing_placeholder=missing_placeholder)
-        final_data = prep.load_data(completed_data, format=output_format, dataset_name=dataset_name)
+        prep.load_data(completed_data, format=output_format, dataset_name=dataset_name)
 
         print(f"Pipeline for dataset '{dataset_name}' completed, using file '{file_path}'.")
 

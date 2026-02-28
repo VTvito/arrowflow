@@ -13,5 +13,5 @@ RUN mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
 # Set Python path to "see" the praparator module 
 ENV PYTHONPATH="/opt/airflow/"
 
-# CMD per avvio servizi
-CMD ["bash", "-c", "airflow webserver & airflow scheduler"]
+# CMD per avvio servizi (db migrate ensures schema exists on first boot)
+CMD ["bash", "-c", "airflow db migrate && (airflow webserver & airflow scheduler)"]

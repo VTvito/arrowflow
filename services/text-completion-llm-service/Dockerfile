@@ -4,6 +4,8 @@ FROM python:3.9-slim
 # Setting the working directory
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Copy the requirements.txt file and install the dependencies
 COPY text-completion-llm-service/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
@@ -20,5 +22,8 @@ ENV PYTHONPATH="/app"
 # Expose the 5012 port -- this microservice used this port
 EXPOSE 5012
 
-# Command to start the microservice
-CMD ["python", "run.py"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:5012/health || exit 1
+
+# 1 worker only — model requires significant memory
+CMD ["gunicorn", "--bind", "0.0.0.0:5012", "--workers", "1", "--timeout", "600", "app:create_app()"]

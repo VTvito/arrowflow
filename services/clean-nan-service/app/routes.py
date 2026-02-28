@@ -1,114 +1,87 @@
 import logging
-from flask import Blueprint, jsonify, request, Response
-from prometheus_client import Counter, generate_latest
-import pyarrow as pa
-import os
 import time
-import json
-from datetime import datetime
-from app.clean import apply_transformations
+
 from common.arrow_utils import ipc_to_table, table_to_ipc
-from common.json_utils import NpEncoder
+from common.path_utils import sanitize_dataset_name
+from common.service_utils import (
+    create_service_counters,
+    get_correlation_id,
+    parse_x_params,
+    register_standard_endpoints,
+    save_metadata,
+)
+from flask import Blueprint, Response, jsonify, request
+
+from app.clean import apply_transformations
 
 bp = Blueprint('clean-nan', __name__)
 logger = logging.getLogger('clean-nan-service')
 
-REQUEST_COUNTER = Counter('clean_nan_requests_total', 'Total requests for the clean NaN service')
-SUCCESS_COUNTER = Counter('clean_nan_success_total', 'Total successful requests for the clean NaN service')
-ERROR_COUNTER = Counter('clean_nan_error_total', 'Total failed requests for the clean NaN service')
+REQUEST_COUNTER, SUCCESS_COUNTER, ERROR_COUNTER = create_service_counters('clean_nan')
+register_standard_endpoints(bp, 'clean-nan-service')
+
 
 @bp.route('/clean-nan', methods=['POST'])
 def clean_nan():
-    """
-    API Endpoint to clean NaN values from Arrow IPC data.
-    - Body: Arrow IPC in binary
-    - Header: 'X-Params' for dataset_name
-    - Output: Arrow IPC with NaN values removed.
-    """
-    
+    """Clean NaN values from Arrow IPC data using configurable strategies."""
     start_time = time.time()
+    correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /clean-nan request.")
+        logger.info("Received /clean-nan request.", extra={"correlation_id": correlation_id})
 
-        # Read the custom header 'X-Params'
-        raw_header = request.headers.get('X-Params', '{}')
-        try:
-            params = json.loads(raw_header)
-        except json.JSONDecodeError:
-            params = {}
-
-        # Now extract dataset_name from that dict
+        params = parse_x_params()
         dataset_name = params.get('dataset_name')
-        
+
         if dataset_name is None:
             ERROR_COUNTER.inc()
-            logger.error("No dataset_name provided in X-Params.")
             return jsonify({"status": "error", "message": "No dataset_name provided in X-Params"}), 400
+
+        dataset_name = sanitize_dataset_name(dataset_name)
 
         ipc_data = request.get_data()
         if not ipc_data:
             ERROR_COUNTER.inc()
-            logger.error("No Arrow IPC data received.")
             return jsonify({"status": "error", "message": "No Arrow IPC data received"}), 400
 
-        # Convert Arrow IPC to Table
         table_in = ipc_to_table(ipc_data)
         rows_in = table_in.num_rows
         cols_in = table_in.num_columns
 
-        # Count NaN (in Pandas, easier)
-        df_in = table_in.to_pandas()
-        total_cells = df_in.size
-        total_null = df_in.isna().sum().sum()
+        strategy = params.get('strategy', 'drop')
+        fill_value = params.get('fill_value')
+        target_columns = params.get('columns')
 
-        cleaned_table, removed_null_count = apply_transformations(table_in)  # returns (arrow_table, num_nan_removed)
+        cleaned_table, nulls_handled, total_null, total_cells = apply_transformations(
+            table_in, strategy=strategy, fill_value=fill_value, columns=target_columns
+        )
         rows_out = cleaned_table.num_rows
         cols_out = cleaned_table.num_columns
 
-        # Convert Table to Arrow IPC
         out_ipc = table_to_ipc(cleaned_table)
         SUCCESS_COUNTER.inc()
-        logger.info(f"Cleaned dataset '{dataset_name}': rows_in={rows_in}, rows_out={rows_out}, null_removed={removed_null_count}")
+        logger.info(
+            f"Cleaned dataset '{dataset_name}': rows_in={rows_in}, rows_out={rows_out}, "
+            f"nulls_handled={nulls_handled}, strategy={strategy}",
+            extra={"correlation_id": correlation_id, "dataset_name": dataset_name},
+        )
 
-        # Save metadata
-        end_time = time.time()
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        dataset_folder = f"/app/data/{dataset_name}"
-        os.makedirs(dataset_folder, exist_ok=True)
-        metadata_dir = os.path.join(dataset_folder, "metadata")
-        os.makedirs(metadata_dir, exist_ok=True)
-        metadata_path = os.path.join(metadata_dir, f"metadata_clean_nan_{timestamp}.json")
+        save_metadata("clean-nan", dataset_name, {
+            "rows_in": rows_in, "rows_out": rows_out,
+            "cols_in": cols_in, "cols_out": cols_out,
+            "total_cells": total_cells, "na_total": total_null,
+            "na_handled": nulls_handled, "strategy": strategy,
+        }, start_time)
 
-        metadata = {
-            "service": "clean-nan",
-            "dataset_name": dataset_name,
-            "rows_in": rows_in,
-            "rows_out": rows_out,
-            "cols_in": cols_in,
-            "cols_out": cols_out,
-            "total_cells": total_cells,
-            "na_total": total_null,
-            "na_removed": removed_null_count,
-            "duration_sec": round(end_time - start_time, 3),
-            "timestamp": timestamp
-        }
+        resp = Response(out_ipc, status=200, mimetype="application/vnd.apache.arrow.stream")
+        resp.headers["X-Correlation-ID"] = correlation_id
+        return resp
 
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, cls=NpEncoder, indent=2)
-        logger.info(f"Metadata saved to {metadata_path}")
-
-        return Response(out_ipc, mimetype="application/vnd.apache.arrow.stream"), 200
-
+    except ValueError as ve:
+        ERROR_COUNTER.inc()
+        logger.error(str(ve), extra={"correlation_id": correlation_id})
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         ERROR_COUNTER.inc()
-        logger.exception("Error during /clean-nan processing.")
+        logger.exception("Error during /clean-nan processing.", extra={"correlation_id": correlation_id})
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@bp.route('/metrics', methods=['GET'])
-def metrics():
-    return Response(generate_latest(), mimetype="text/plain")
-
-@bp.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok"}), 200

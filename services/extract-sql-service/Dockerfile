@@ -4,6 +4,8 @@ FROM python:3.9-slim
 # Setting the working directory
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Copy the requirements.txt file and install the dependencies
 COPY extract-sql-service/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
@@ -20,5 +22,7 @@ ENV PYTHONPATH="/app"
 # Expose the 5005 port -- this microservice used this port
 EXPOSE 5005
 
-# Command to start the microservice
-CMD ["python", "run.py"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:5005/health || exit 1
+
+CMD ["gunicorn", "--bind", "0.0.0.0:5005", "--workers", "4", "--timeout", "300", "app:create_app()"]

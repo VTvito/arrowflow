@@ -1,107 +1,123 @@
 import logging
-import os
 import time
-import json
-from datetime import datetime
-from flask import Blueprint, jsonify, request, Response
-from prometheus_client import Counter, generate_latest
-import pyarrow as pa
 
-from common.arrow_utils import ipc_to_table, table_to_ipc
-from common.json_utils import NpEncoder
+from common.arrow_utils import ipc_to_table
+from common.path_utils import sanitize_dataset_name
+from common.service_utils import (
+    create_service_counters,
+    get_correlation_id,
+    parse_x_params,
+    register_standard_endpoints,
+    save_metadata,
+)
+from flask import Blueprint, Response, jsonify, request
+
 from app.dq import basic_quality_checks
 
 bp = Blueprint('data_quality', __name__)
 logger = logging.getLogger('data-quality-service')
 
-REQUEST_COUNTER = Counter('data_quality_requests_total', 'Total requests for the data quality service')
-SUCCESS_COUNTER = Counter('data_quality_success_total', 'Total successful requests for the data quality service')
-ERROR_COUNTER = Counter('data_quality_error_total', 'Total failed requests for the data quality service')
+REQUEST_COUNTER, SUCCESS_COUNTER, ERROR_COUNTER = create_service_counters('data_quality')
+register_standard_endpoints(bp, 'data-quality-service')
+
+
+def _get_failing_checks(checks: dict) -> dict:
+    """
+    Return a dict of only the checks that have pass=False.
+    Handles both boolean results (e.g. min_rows) and dict results
+    (e.g. null_ratio, duplicates) produced by basic_quality_checks().
+    """
+    failing = {}
+    for key, value in checks.items():
+        if isinstance(value, bool) and not value:
+            failing[key] = value
+        elif isinstance(value, dict):
+            if "pass" in value and not value["pass"]:
+                failing[key] = value
+            else:
+                # Nested dicts (e.g. check_column_types, check_value_range)
+                nested_failures = {
+                    col: v for col, v in value.items()
+                    if isinstance(v, dict) and v.get("pass") is False
+                }
+                if nested_failures:
+                    failing[key] = nested_failures
+    return failing
+
 
 @bp.route('/data-quality', methods=['POST'])
 def data_quality():
-    """
-    Data Quality API Endpoint:
-      - Receives Arrow IPC data in the request body.
-      - Optionally receives a JSON string of 'rules' in header.
-      - Performs basic quality checks and logs the results to a JSON metadata file.
-      - Returns the same Arrow IPC data unchanged.
-    """
+    """Perform quality checks on Arrow IPC data and return data unchanged."""
     start_time = time.time()
+    correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /data-quality request.")
+        logger.info("Received /data-quality request.", extra={"correlation_id": correlation_id})
 
-        # Read the custom header 'X-Params'
-        raw_header = request.headers.get('X-Params', '{}')
-        try:
-            header_data = json.loads(raw_header)
-        except json.JSONDecodeError:
-            header_data = {}
-
-        # Extract dataset_name and rules from dict
+        header_data = parse_x_params()
         dataset_name = header_data.get('dataset_name')
         rules = header_data.get('rules')
+        fail_on_errors = header_data.get('fail_on_errors', False)
 
         if not dataset_name:
             ERROR_COUNTER.inc()
-            logger.error("No dataset_name provided in header.")
             return jsonify({"status": "error", "message": "No dataset_name provided in header"}), 400
-        
-        if not rules:
-            logger.info("No rules provided in header. Using default rules.")
 
-        # Retrieve the Arrow IPC bytes from the request body.
+        dataset_name = sanitize_dataset_name(dataset_name)
+
+        if not rules:
+            logger.info("No rules provided in header. Using default rules.",
+                        extra={"correlation_id": correlation_id})
+
         ipc_data = request.get_data()
         if not ipc_data:
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "No Arrow IPC data received"}), 400
 
-        # Deserialize the bytes into an Arrow Table.
         arrow_table = ipc_to_table(ipc_data)
         rows_in = arrow_table.num_rows
         cols_in = arrow_table.num_columns
 
-        # Perform + quality checks
         dq_result = basic_quality_checks(arrow_table, rules)
-        logger.info(f"Data quality checks completed for dataset '{dataset_name}' with {rows_in} rows and {cols_in} columns.")
+        logger.info(
+            f"Data quality checks completed for dataset '{dataset_name}' "
+            f"with {rows_in} rows and {cols_in} columns.",
+            extra={"correlation_id": correlation_id, "dataset_name": dataset_name},
+        )
 
-        # Save a metadata file
-        end_time = time.time()
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        
-        dataset_folder = f"/app/data/{dataset_name}"
-        os.makedirs(dataset_folder, exist_ok=True)
-        meta_dir = os.path.join(dataset_folder, "metadata")
-        os.makedirs(meta_dir, exist_ok=True)
-        metadata_file = os.path.join(meta_dir, f"metadata_data_quality_{timestamp}.json")
+        # Quality gate: optionally abort the pipeline if any check fails
+        if fail_on_errors:
+            failing = _get_failing_checks(dq_result["checks"])
+            if failing:
+                ERROR_COUNTER.inc()
+                logger.warning(
+                    f"Quality gate triggered for dataset '{dataset_name}': {list(failing.keys())}",
+                    extra={"correlation_id": correlation_id, "dataset_name": dataset_name},
+                )
+                return jsonify({
+                    "status": "quality_failed",
+                    "message": (
+                        f"Data quality checks failed for dataset '{dataset_name}': "
+                        f"{', '.join(failing.keys())}"
+                    ),
+                    "checks": failing,
+                }), 422
 
-        metadata = {
-            "service_name": "data-quality",
-            "dataset_name": dataset_name,
-            "rows_in": rows_in,
-            "cols_in": cols_in,
+        save_metadata("data-quality", dataset_name, {
+            "rows_in": rows_in, "cols_in": cols_in,
             "dq_checks": dq_result["checks"],
-            "duration_sec": round(end_time - start_time, 3),
-            "timestamp": timestamp
-        }
-
-        with open(metadata_file, "w") as f:
-            json.dump(metadata, f, cls=NpEncoder, indent=2)
-        logger.info(f"Data quality metadata saved to {metadata_file}")
+        }, start_time)
 
         SUCCESS_COUNTER.inc()
-        return Response(ipc_data, mimetype="application/vnd.apache.arrow.stream"), 200
+        resp = Response(ipc_data, status=200, mimetype="application/vnd.apache.arrow.stream")
+        resp.headers["X-Correlation-ID"] = correlation_id
+        return resp
 
+    except ValueError as ve:
+        ERROR_COUNTER.inc()
+        logger.error(str(ve), extra={"correlation_id": correlation_id})
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         ERROR_COUNTER.inc()
-        logger.exception("Error in data quality service.")
+        logger.exception("Error in data quality service.", extra={"correlation_id": correlation_id})
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@bp.route('/metrics', methods=['GET'])
-def metrics():
-    return Response(generate_latest(), mimetype="text/plain")
-
-@bp.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok"}), 200

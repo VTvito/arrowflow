@@ -1,104 +1,77 @@
 import logging
-from flask import Blueprint, jsonify, request, Response
-from prometheus_client import Counter, generate_latest
-import os
-import pandas as pd
 import time
-import json
-from datetime import datetime
+
+from common.arrow_utils import table_to_ipc
+from common.path_utils import sanitize_dataset_name
+from common.service_utils import (
+    create_service_counters,
+    get_correlation_id,
+    register_standard_endpoints,
+    save_metadata,
+)
+from flask import Blueprint, Response, jsonify, request
 
 from app.extract import process_excel
-from common.arrow_utils import table_to_ipc
-from common.json_utils import NpEncoder
 
 bp = Blueprint('extract-excel', __name__)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s %(message)s',
-    handlers=[logging.StreamHandler()]
-)
 logger = logging.getLogger('extract-excel-service')
 
-REQUEST_COUNTER = Counter('extract_excel_requests_total', 'Total requests for extract Excel service')
-SUCCESS_COUNTER = Counter('extract_excel_success_total', 'Total successful requests for extract Excel service')
-ERROR_COUNTER = Counter('extract_excel_error_total', 'Total failed requests for extract Excel service')
+REQUEST_COUNTER, SUCCESS_COUNTER, ERROR_COUNTER = create_service_counters('extract_excel')
+register_standard_endpoints(bp, 'extract-excel-service')
+
 
 @bp.route('/extract-excel', methods=['POST'])
 def extract_excel():
-    """
-    API Endpoint to extract data from an Excel file and serialize it into Arrow IPC format.
-    Input: JSON with:
-      - dataset_name
-      - file_path (Excel .xls/.xlsx)
-    Output: Arrow IPC
-    """
+    """Extract data from an Excel file and return Arrow IPC."""
     start_time = time.time()
+    correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-excel request.")
+        logger.info("Received /extract-excel request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json()
         dataset_name = data.get('dataset_name')
         file_path = data.get('file_path')
 
         if not file_path:
-            logger.error("Missing 'file_path' param.")
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'file_path' is required"}), 400
 
         if not dataset_name:
-            logger.error("Missing 'dataset_name' param.")
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
-        logger.info(f"Extracting from Excel: {file_path} for dataset '{dataset_name}'")
+        dataset_name = sanitize_dataset_name(dataset_name)
+        logger.info(f"Extracting from Excel: {file_path} for dataset '{dataset_name}'",
+                    extra={"correlation_id": correlation_id})
 
-        # Load Excel into Arrow Table
         arrow_table = process_excel(file_path)
         rows = arrow_table.num_rows
         cols = arrow_table.num_columns
 
         if rows == 0:
-            logger.warning("Extracted Arrow table has no rows.")
+            logger.warning("Extracted Arrow table has no rows.", extra={"correlation_id": correlation_id})
 
-        # Serialize Arrow Table to Arrow IPC
         ipc_data = table_to_ipc(arrow_table)
-
         SUCCESS_COUNTER.inc()
-        logger.info(f"Successfully extracted Excel with {rows} rows, {cols} cols for dataset '{dataset_name}'.")
+        logger.info(
+            f"Successfully extracted Excel with {rows} rows, {cols} cols for dataset '{dataset_name}'.",
+            extra={"correlation_id": correlation_id, "dataset_name": dataset_name},
+        )
 
-        # Metadata
-        end_time = time.time()
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        dataset_folder = f"/app/data/{dataset_name}"
-        os.makedirs(dataset_folder, exist_ok=True)
-        metadata_dir = os.path.join(dataset_folder, "metadata")
-        os.makedirs(metadata_dir, exist_ok=True)
-        metadata_path = os.path.join(metadata_dir, f"metadata_extract_excel_{timestamp}.json")
+        save_metadata("extract-excel", dataset_name, {
+            "file_path": file_path, "rows_out": rows, "cols_out": cols,
+        }, start_time)
 
-        metadata = {
-            "service_name": "extract-excel",
-            "dataset_name": dataset_name,
-            "file_path": file_path,
-            "rows_out": rows,
-            "cols_out": cols,
-            "duration_sec": round(end_time - start_time,3),
-            "timestamp": timestamp
-        }
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, cls=NpEncoder, indent=2)
+        resp = Response(ipc_data, status=200, mimetype="application/vnd.apache.arrow.stream")
+        resp.headers["X-Correlation-ID"] = correlation_id
+        return resp
 
-        return Response(ipc_data, mimetype="application/vnd.apache.arrow.stream"), 200
+    except ValueError as ve:
+        ERROR_COUNTER.inc()
+        logger.error(str(ve), extra={"correlation_id": correlation_id})
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         ERROR_COUNTER.inc()
-        logger.exception("Error during /extract-excel processing.")
+        logger.exception("Error during /extract-excel processing.", extra={"correlation_id": correlation_id})
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@bp.route('/metrics', methods=['GET'])
-def metrics():
-    return Response(generate_latest(), mimetype="text/plain")
-
-@bp.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok"}), 200

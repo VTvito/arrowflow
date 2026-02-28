@@ -1,46 +1,33 @@
 import logging
-from flask import Blueprint, jsonify, request, Response
-from prometheus_client import Counter, generate_latest
 import time
-import json
-import os
-from datetime import datetime
+
+from common.arrow_utils import table_to_ipc
+from common.path_utils import sanitize_dataset_name
+from common.service_utils import (
+    create_service_counters,
+    get_correlation_id,
+    register_standard_endpoints,
+    save_metadata,
+)
+from flask import Blueprint, Response, jsonify, request
 
 from app.extract import extract_from_api
-from common.arrow_utils import table_to_ipc
-from common.json_utils import NpEncoder
 
 bp = Blueprint('extract-api', __name__)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s %(message)s',
-    handlers=[logging.StreamHandler()]
-)
 logger = logging.getLogger('extract-api-service')
 
-REQUEST_COUNTER = Counter('extract_api_requests_total', 'Total requests for extract API service')
-SUCCESS_COUNTER = Counter('extract_api_success_total', 'Total successful requests for extract API service')
-ERROR_COUNTER = Counter('extract_api_error_total', 'Total failed requests for extract API service')
+REQUEST_COUNTER, SUCCESS_COUNTER, ERROR_COUNTER = create_service_counters('extract_api')
+register_standard_endpoints(bp, 'extract-api-service')
+
 
 @bp.route('/extract-api', methods=['POST'])
 def api_extraction():
-    """
-    API Endpoint to extract data from an API.
-    Input (JSON):
-    {
-      "dataset_name": "...",
-      "api_url": "...",
-      "api_params": {...},
-      "auth_type": "api_key" (optional),
-      "auth_value": "..." (optional)
-    }
-    Output: Arrow IPC 
-    """
+    """Extract data from a REST API and return Arrow IPC."""
     start_time = time.time()
+    correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-api request.")
+        logger.info("Received /extract-api request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json()
         dataset_name = data.get('dataset_name')
@@ -53,61 +40,39 @@ def api_extraction():
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
+        dataset_name = sanitize_dataset_name(dataset_name)
+
         if not api_url:
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "Parameter 'api_url' is required"}), 400
 
-        # Extract data from API
         arrow_table = extract_from_api(api_url, api_params, auth_type, auth_value)
         rows = arrow_table.num_rows
         cols = arrow_table.num_columns
-        
+
         if rows == 0:
-            logger.warning("Extracted Arrow table has no rows.")
+            logger.warning("Extracted Arrow table has no rows.", extra={"correlation_id": correlation_id})
 
-        # Serialize Arrow Table to Arrow IPC
         ipc_data = table_to_ipc(arrow_table)
-
         SUCCESS_COUNTER.inc()
-        logger.info(f"Extracted API data with {rows} rows, {cols} cols for dataset '{dataset_name}'.")
+        logger.info(
+            f"Extracted API data with {rows} rows, {cols} cols for dataset '{dataset_name}'.",
+            extra={"correlation_id": correlation_id, "dataset_name": dataset_name},
+        )
 
-        # Metadata
-        end_time = time.time()
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        dataset_folder = f"/app/data/{dataset_name}"
-        os.makedirs(dataset_folder, exist_ok=True)
-        metadata_dir = os.path.join(dataset_folder, "metadata")
-        os.makedirs(metadata_dir, exist_ok=True)
-        metadata_path = os.path.join(metadata_dir, f"metadata_extract_api_{timestamp}.json")
-        
-        metadata = {
-            "service_name": "extract-api",
-            "dataset_name": dataset_name,
-            "api_url": api_url,
-            "rows_out": rows,
-            "cols_out": cols,
-            "duration_sec": round(end_time - start_time, 3),
-            "timestamp": timestamp
-        }
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, cls=NpEncoder, indent=2)
+        save_metadata("extract-api", dataset_name, {
+            "api_url": api_url, "rows_out": rows, "cols_out": cols,
+        }, start_time)
 
-        return Response(ipc_data, mimetype="application/vnd.apache.arrow.stream"), 200
+        resp = Response(ipc_data, status=200, mimetype="application/vnd.apache.arrow.stream")
+        resp.headers["X-Correlation-ID"] = correlation_id
+        return resp
 
     except ValueError as ve:
         ERROR_COUNTER.inc()
-        logger.error(str(ve))
+        logger.error(str(ve), extra={"correlation_id": correlation_id})
         return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         ERROR_COUNTER.inc()
-        logger.exception("Error during /extract-api processing.")
+        logger.exception("Error during /extract-api processing.", extra={"correlation_id": correlation_id})
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@bp.route('/metrics', methods=['GET'])
-def metrics():
-    REQUEST_COUNTER.inc()
-    return Response(generate_latest(), mimetype="text/plain")
-
-@bp.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok"}), 200

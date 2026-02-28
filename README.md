@@ -84,7 +84,7 @@ All inter-service data flows as **Apache Arrow IPC streaming format** — a zero
 |---|---|---|
 | `extract-csv-service` | 5001 | Reads CSV files from shared volume |
 | `extract-sql-service` | 5005 | Executes SQL queries via SQLAlchemy |
-| `extract-api-service` | 5006 | Fetches data from REST APIs (supports API key/Bearer auth) |
+| `extract-api-service` | 5006 | Fetches data from REST APIs (supports API key auth) |
 | `extract-excel-service` | 5007 | Reads .xls/.xlsx files |
 
 ### Transform (Arrow IPC-in → Arrow IPC-out)
@@ -325,7 +325,7 @@ Results are saved to `benchmark/results/` including PNG charts and an interactiv
 │   └── run_benchmark.py        # Benchmark runner + charts
 ├── tests/
 │   ├── conftest.py             # Shared fixtures (Arrow tables, IPC data)
-│   ├── unit/                   # 12 test files for business logic + common modules
+│   ├── unit/                   # 17 test files for business logic + common modules
 │   └── integration/            # Integration tests for endpoints + SDK
 ├── .github/workflows/ci.yml   # GitHub Actions CI pipeline
 └── prometheus/

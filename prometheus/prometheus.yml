@@ -1,7 +1,7 @@
-# Questo file definisce i job e i target che Prometheus deve monitorare
+# Prometheus scrape configuration for all ETL microservices
 
 global:
-  scrape_interval: 15s  # Intervallo di raccolta delle metriche
+  scrape_interval: 15s  # Metrics collection interval
 
 scrape_configs:
 

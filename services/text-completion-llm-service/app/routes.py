@@ -29,7 +29,6 @@ def text_completion():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /text-completion-llm request.", extra={"correlation_id": correlation_id})
 
         params = parse_x_params()
         dataset_name = params.get("dataset_name")

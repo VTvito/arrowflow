@@ -15,8 +15,8 @@ for _mod in list(sys.modules):
         del sys.modules[_mod]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "load-data-service"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services"))
-from app.load import load_arrow_to_format, save_output_file  # noqa: E402
 from app import load as _load_module  # noqa: E402
+from app.load import load_arrow_to_format, save_output_file  # noqa: E402
 
 
 class TestLoadArrowToFormat:

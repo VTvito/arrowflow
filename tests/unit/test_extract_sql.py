@@ -11,8 +11,11 @@ for _mod in list(sys.modules):
         del sys.modules[_mod]
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "extract-sql-service"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services"))
-from app.extract import redact_db_url, validate_sql_query, _ALLOWED_DB_SCHEMES  # noqa: E402
-
+from app.extract import (  # noqa: E402
+    _ALLOWED_DB_SCHEMES,
+    redact_db_url,
+    validate_sql_query,
+)
 
 # ── SQL validation ───────────────────────────────────────────────────────────
 

@@ -12,51 +12,34 @@ logger = logging.getLogger('load-data-service')
 def load_arrow_to_format(arrow_table, format_type):
     """
     Converts an Arrow Table to the specified format ('csv','excel','json','parquet').
-    Returns bytes of the converted data.
+    Returns (bytes, actual_format) tuple.
     """
-    try:
-        if not isinstance(format_type, str) or not format_type.strip():
-            raise ValueError("Unsupported format: format_type must be a non-empty string")
+    if not isinstance(format_type, str) or not format_type.strip():
+        raise ValueError(f"Unsupported format: {format_type!r}")
+    normalized_format = format_type.lower().strip()
 
-        normalized_format = format_type.lower().strip()
+    if normalized_format == 'parquet':
+        output = io.BytesIO()
+        pq.write_table(arrow_table, output, compression='snappy')
+        return output.getvalue(), normalized_format
 
-        # Parquet can be written directly from Arrow without Pandas conversion
-        if normalized_format == 'parquet':
-            output = io.BytesIO()
-            pq.write_table(arrow_table, output, compression='snappy')
-            logger.info("Converted Arrow Table to Parquet format (snappy compression).")
-            return output.getvalue(), normalized_format
+    df = arrow_table.to_pandas()
 
-        df = arrow_table.to_pandas()
-        logger.info(f"Converted Arrow Table to Pandas DataFrame with {df.shape[0]} rows and {df.shape[1]} columns.")
+    if normalized_format == 'csv':
+        output = df.to_csv(index=False)
+        return output.encode('utf-8'), normalized_format
 
-        if normalized_format == 'csv':
-            output = df.to_csv(index=False)
-            logger.info("Converted DataFrame to CSV format.")
-            return output.encode('utf-8'), normalized_format
+    elif normalized_format in ('xlsx', 'xls'):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sheet1')
+        return output.getvalue(), 'xlsx'
 
-        elif normalized_format in ('xlsx', 'xls'):
-            # xlsxwriter always produces .xlsx; normalise so callers
-            # (including save_output_file) use the correct extension.
-            if normalized_format == 'xls':
-                logger.info("Normalising format 'xls' → 'xlsx' (xlsxwriter output).")
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
-            logger.info("Converted DataFrame to Excel format.")
-            return output.getvalue(), 'xlsx'
+    elif normalized_format == 'json':
+        output = df.to_json(orient='records')
+        return output.encode('utf-8'), normalized_format
 
-        elif normalized_format == 'json':
-            output = df.to_json(orient='records')
-            logger.info("Converted DataFrame to JSON format.")
-            return output.encode('utf-8'), normalized_format
-
-        else:
-            logger.error(f"Unsupported format: {format_type}")
-            raise ValueError(f"Unsupported format: {format_type}")
-    except Exception as e:
-        logger.error(f"Failed to convert data: {e}")
-        raise
+    raise ValueError(f"Unsupported format: {format_type}")
 
 
 def save_output_file(data: bytes, dataset_name: str, format_type: str) -> str:

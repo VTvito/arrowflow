@@ -161,7 +161,7 @@ class TestTopologicalLayers:
         ]
         layers = _topological_layers(steps)
         assert len(layers) == 3
-        assert [len(l) for l in layers] == [1, 1, 1]
+        assert [len(layer) for layer in layers] == [1, 1, 1]
 
     def test_parallel_extracts_grouped_in_same_layer(self):
         steps = [

@@ -27,7 +27,6 @@ def extract_csv():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-csv request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json(silent=True)
         if data is None:
@@ -46,8 +45,6 @@ def extract_csv():
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         dataset_name = sanitize_dataset_name(dataset_name)
-        logger.info(f"Extracting dataset '{dataset_name}' from file {file_path}",
-                    extra={"correlation_id": correlation_id})
 
         arrow_table = load_csv_to_arrow(file_path)
         rows = arrow_table.num_rows

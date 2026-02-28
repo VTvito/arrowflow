@@ -27,7 +27,6 @@ def extract_data():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-sql request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json(silent=True)
         if data is None:
@@ -48,9 +47,6 @@ def extract_data():
 
         dataset_name = sanitize_dataset_name(dataset_name)
         db_url_redacted = redact_db_url(db_url)
-
-        logger.info(f"Extracting from SQL source for dataset '{dataset_name}'",
-                    extra={"correlation_id": correlation_id})
 
         arrow_table = extract_from_sql(db_url, query)
         rows = arrow_table.num_rows

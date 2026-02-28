@@ -28,7 +28,6 @@ def load_data():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /load-data request.", extra={"correlation_id": correlation_id})
 
         header_data = parse_x_params()
         dataset_name = header_data.get('dataset_name')
@@ -51,9 +50,6 @@ def load_data():
         if not ipc_data:
             ERROR_COUNTER.inc()
             return jsonify({"status": "error", "message": "No data received"}), 400
-
-        logger.info(f"Received {len(ipc_data)} bytes of Arrow IPC data.",
-                    extra={"correlation_id": correlation_id})
 
         arrow_table = ipc_to_table(ipc_data)
         rows_in = arrow_table.num_rows

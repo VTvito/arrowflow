@@ -1,7 +1,5 @@
 import logging
 
-import pyarrow as pa
-
 logger = logging.getLogger('delete-columns-service')
 
 def drop_columns_arrow(arrow_table, columns_to_delete):

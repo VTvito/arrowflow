@@ -25,7 +25,6 @@ def join_datasets_logic(table1, table2, join_key="id", join_type="inner"):
     if normalized_join_type not in VALID_JOIN_TYPES:
         raise ValueError(f"join_type must be one of {sorted(VALID_JOIN_TYPES)}")
 
-    # Convert Arrow Table to Pandas DataFrame
     df1 = table1.to_pandas()
     df2 = table2.to_pandas()
 
@@ -35,10 +34,7 @@ def join_datasets_logic(table1, table2, join_key="id", join_type="inner"):
     if join_key not in df2.columns:
         raise ValueError(f"join_key '{join_key}' not found in second dataset")
 
-    # Perform the join operation in Pandas
     joined_df = df1.merge(df2, on=join_key, how=normalized_join_type)
-
-    # Convert the joined DataFrame back to Arrow Table
     joined_table = pa.Table.from_pandas(joined_df)
 
     return joined_table, joined_df.shape

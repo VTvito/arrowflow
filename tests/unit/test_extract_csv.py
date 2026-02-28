@@ -2,7 +2,6 @@
 
 import os
 import sys
-import tempfile
 
 import pandas as pd
 import pyarrow as pa

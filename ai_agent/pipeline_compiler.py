@@ -34,7 +34,6 @@ class StepResult:
     duration_sec: float = 0.0
     data_size_bytes: int = 0
     error_message: str = ""
-    metadata: dict = field(default_factory=dict)
 
 
 @dataclass

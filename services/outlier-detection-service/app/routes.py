@@ -28,7 +28,6 @@ def outlier_detection():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /outlier-detection request.", extra={"correlation_id": correlation_id})
 
         header_data = parse_x_params()
         dataset_name = header_data.get('dataset_name')

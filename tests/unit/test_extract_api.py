@@ -14,8 +14,11 @@ for _mod in list(sys.modules):
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "extract-api-service"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services"))
 from app import extract as _api_extract_module  # noqa: E402
-from app.extract import _is_private_ip, _validate_api_url, extract_from_api  # noqa: E402
-
+from app.extract import (  # noqa: E402
+    _is_private_ip,
+    _validate_api_url,
+    extract_from_api,
+)
 
 # ── URL validation ───────────────────────────────────────────────────────────
 

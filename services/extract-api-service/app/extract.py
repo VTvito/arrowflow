@@ -1,16 +1,12 @@
 import ipaddress
-import logging
+import json
 import os
 import socket
 from urllib.parse import urlparse
 
-import json
-
 import pandas as pd
 import pyarrow as pa
 import requests
-
-logger = logging.getLogger('extract-api-service')
 
 
 def _is_private_ip(ip_str):
@@ -58,7 +54,6 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
         safe_api_url = _validate_api_url(api_url)
         headers = {}
 
-        # Configure header of auth (optional)
         if auth_type is not None:
             if auth_value is None:
                 raise ValueError(f"auth_value is required when auth_type='{auth_type}'")
@@ -67,11 +62,9 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
             else:
                 raise ValueError(f"Type of auth '{auth_type}' not supported")
 
-        # GET request
         response = requests.get(safe_api_url, params=api_params, headers=headers, timeout=30)
         response.raise_for_status()
 
-        # Convert the response in DataFrame
         try:
             body = response.json()
         except json.JSONDecodeError as e:
@@ -80,14 +73,7 @@ def extract_from_api(api_url, api_params, auth_type=None, auth_value=None):
             ) from e
 
         df = pd.json_normalize(body)
-
-        # Convert pandas DataFrame to Arrow Table
-        arrow_table = pa.Table.from_pandas(df)
-        logger.info(
-            f"Converted DataFrame to Arrow Table with "
-            f"{arrow_table.num_rows} rows, {arrow_table.num_columns} columns."
-        )
-        return arrow_table
+        return pa.Table.from_pandas(df)
 
     except requests.RequestException as e:
         raise ValueError(f"API Error: {str(e)}") from e

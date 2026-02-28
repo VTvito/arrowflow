@@ -33,7 +33,6 @@ def apply_transformations(arrow_table, strategy="drop", fill_value=None, columns
 
     try:
         df = arrow_table.to_pandas()
-        logger.info(f"Converted to Pandas with shape {df.shape}, strategy='{strategy}'")
 
         total_cells = df.size
         total_null_before = int(df.isna().sum().sum())
@@ -73,11 +72,6 @@ def apply_transformations(arrow_table, strategy="drop", fill_value=None, columns
 
         total_null_after = int(df_cleaned.isna().sum().sum())
         nulls_handled = total_null_before - total_null_after
-
-        logger.info(
-            f"Strategy '{strategy}': handled {nulls_handled} nulls. "
-            f"Rows {arrow_table.num_rows} -> {df_cleaned.shape[0]}"
-        )
 
         cleaned_arrow_table = pa.Table.from_pandas(df_cleaned)
         return (cleaned_arrow_table, nulls_handled, total_null_before, total_cells)

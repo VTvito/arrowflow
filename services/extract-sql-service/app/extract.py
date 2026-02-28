@@ -1,12 +1,9 @@
-import logging
 import re
 
 import pandas as pd
 import pyarrow as pa
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
-
-logger = logging.getLogger('extract-sql-service')
 
 READ_ONLY_SQL_PATTERN = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 FORBIDDEN_SQL_PATTERN = re.compile(
@@ -52,7 +49,7 @@ def extract_from_sql(db_url, query):
     The query is validated before execution and only allow-listed DB schemes are accepted.
     """
     try:
-        # Validate query (callers may pre-validate; this is idempotent)
+        # Validate query
         safe_query = validate_sql_query(query)
 
         # Restrict database scheme to prevent file-based access (e.g. sqlite)
@@ -67,12 +64,7 @@ def extract_from_sql(db_url, query):
         engine = create_engine(db_url)
         with engine.connect() as connection:
             df = pd.read_sql(safe_query, connection)
-        arrow_table = pa.Table.from_pandas(df)
-        logger.info(
-            f"Converted DataFrame to Arrow Table with "
-            f"{arrow_table.num_rows} rows, {arrow_table.num_columns} columns."
-        )
-        return arrow_table
+        return pa.Table.from_pandas(df)
     except (ValueError, ConnectionError):
         raise
     except Exception as e:

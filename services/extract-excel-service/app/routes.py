@@ -27,7 +27,6 @@ def extract_excel():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-excel request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json(silent=True)
         if data is None:
@@ -46,8 +45,6 @@ def extract_excel():
             return jsonify({"status": "error", "message": "Parameter 'dataset_name' is required"}), 400
 
         dataset_name = sanitize_dataset_name(dataset_name)
-        logger.info(f"Extracting from Excel: {file_path} for dataset '{dataset_name}'",
-                    extra={"correlation_id": correlation_id})
 
         arrow_table = process_excel(file_path)
         rows = arrow_table.num_rows

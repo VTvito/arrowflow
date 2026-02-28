@@ -23,7 +23,6 @@ from common.path_utils import ensure_dataset_dirs
 from flask import Response, g, has_request_context, jsonify, request
 from prometheus_client import Counter, generate_latest
 
-# ── Prometheus helpers ──────────────────────────────────────────────
 
 def create_service_counters(service_slug):
     """
@@ -42,7 +41,6 @@ def create_service_counters(service_slug):
     )
 
 
-# ── Standard endpoints ─────────────────────────────────────────────
 
 def register_standard_endpoints(bp, service_name):
     """
@@ -62,7 +60,6 @@ def register_standard_endpoints(bp, service_name):
         return Response(generate_latest(), mimetype="text/plain")
 
 
-# ── Request helpers ─────────────────────────────────────────────────
 
 def get_correlation_id():
     """
@@ -92,7 +89,6 @@ def parse_x_params():
         raise ValueError(f"Malformed JSON in X-Params header: {exc}") from exc
 
 
-# ── Metadata helper ────────────────────────────────────────────────
 
 def save_metadata(service_name, dataset_name, extra_fields=None, start_time=None):
     """
@@ -118,7 +114,7 @@ def save_metadata(service_name, dataset_name, extra_fields=None, start_time=None
         "service_name": service_name,
         "dataset_name": dataset_name,
         "timestamp": timestamp,
-        "correlation_id": get_correlation_id() if _has_request_context() else None,
+        "correlation_id": get_correlation_id() if has_request_context() else None,
     }
     if start_time is not None:
         metadata["duration_sec"] = round(time.time() - start_time, 3)
@@ -130,7 +126,3 @@ def save_metadata(service_name, dataset_name, extra_fields=None, start_time=None
 
     return metadata_path
 
-
-def _has_request_context():
-    """Check whether we're inside a Flask request context."""
-    return has_request_context()

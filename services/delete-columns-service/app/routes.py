@@ -28,7 +28,6 @@ def delete_columns():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /delete-columns request.", extra={"correlation_id": correlation_id})
 
         header_data = parse_x_params()
         columns_raw = header_data.get('columns', '')

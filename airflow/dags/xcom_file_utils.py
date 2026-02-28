@@ -11,7 +11,7 @@ This eliminates the XCom bottleneck for datasets >50k rows.
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger("xcom_file_utils")
 
@@ -33,7 +33,7 @@ def save_ipc_to_shared(ipc_data: bytes, dataset_name: str, step_name: str) -> st
     xcom_dir = os.path.join(SHARED_DATA_ROOT, dataset_name, "xcom")
     os.makedirs(xcom_dir, exist_ok=True)
 
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     unique_id = uuid.uuid4().hex[:8]
     filename = f"{step_name}_{timestamp}_{unique_id}.arrow"
     file_path = os.path.join(xcom_dir, filename)

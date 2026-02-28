@@ -28,7 +28,6 @@ def join_datasets():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /join-datasets request (multipart).", extra={"correlation_id": correlation_id})
 
         params = parse_x_params()
         dataset_name = params.get('dataset_name')

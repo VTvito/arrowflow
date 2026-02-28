@@ -18,19 +18,8 @@ def load_csv_to_arrow(file_path):
     """
     try:
         safe_file_path = resolve_input_path(file_path)
-
-        # Read CSV with pandas
         df = pd.read_csv(safe_file_path)
-        logger.info(f"Loaded CSV file {safe_file_path} into DataFrame with shape {df.shape}")
-
-        # Convert pandas DataFrame to Arrow Table
-        arrow_table = pa.Table.from_pandas(df)
-        logger.info(
-            f"Converted DataFrame to Arrow Table with "
-            f"{arrow_table.num_rows} rows, {arrow_table.num_columns} columns."
-        )
-
-        return arrow_table
+        return pa.Table.from_pandas(df)
     except Exception as e:
         logger.error(f"Failed to load CSV into Arrow format: {e}")
         raise

@@ -27,7 +27,6 @@ def api_extraction():
     correlation_id = get_correlation_id()
     try:
         REQUEST_COUNTER.inc()
-        logger.info("Received /extract-api request.", extra={"correlation_id": correlation_id})
 
         data = request.get_json(silent=True)
         if data is None:

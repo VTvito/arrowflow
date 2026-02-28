@@ -8,7 +8,7 @@
 
 **What this is:** An AI-assisted, modular ETL (Extract, Transform, Load) platform where each data operation is an independent Flask microservice. Pipelines are orchestrated via Apache Airflow DAGs or via the AI agent (natural language → YAML → execution).
 
-**Primary use case:** HR / People Analytics — the platform ships with a production-ready pipeline for the IBM HR Attrition dataset (extract → quality check → drop columns → outlier detection → clean NaN → load).
+**Primary use case:** HR / People Analytics and E-commerce — the platform ships with production-ready pipelines for the IBM HR Attrition dataset and e-commerce order analytics, plus a weather API demo. Bundled demo datasets in `data/demo/` allow out-of-the-box testing.
 
 **Core differentiator:** Composable, dynamically-assembled pipelines where an AI agent can translate natural language into validated YAML pipeline definitions and execute them. Each microservice is independently deployable, observable, and scalable.
 
@@ -96,6 +96,7 @@ etl_microservices/
 ├── docker-compose.yml              # Full stack: 11 services + postgres + airflow + prometheus + grafana + streamlit
 ├── Makefile                        # Common commands: up, down, build, test, lint, benchmark
 ├── pyproject.toml                  # Project metadata, pytest/ruff/coverage config
+├── README.md                       # Project overview and quickstart
 ├── .env                            # Environment variables (not committed)
 ├── .env.example                    # Template for .env
 │
@@ -103,7 +104,7 @@ etl_microservices/
 │   ├── common/                     # Shared utilities (imported by all services)
 │   │   ├── arrow_utils.py          # ipc_to_table(), table_to_ipc()
 │   │   ├── json_utils.py           # NpEncoder (handles numpy types in JSON)
-│   │   ├── path_utils.py           # sanitize_dataset_name(), resolve_input_path() — security
+│   │   ├── path_utils.py           # sanitize_dataset_name(), resolve_input_path(), ensure_dataset_dirs() — security & paths
 │   │   ├── logging_config.py       # JSONFormatter, CorrelationAdapter, configure_service_logging()
 │   │   ├── health.py               # create_health_response() — enriched health checks
 │   │   └── service_utils.py        # Counters, /health+/metrics, X-Params parsing, metadata, correlation ID
@@ -124,6 +125,8 @@ etl_microservices/
 │   ├── Dockerfile                  # Airflow webserver + scheduler, db migrate on startup
 │   └── dags/
 │       ├── hr_analytics_pipeline.py                     # HR use case (6-step pipeline)
+│       ├── ecommerce_pipeline.py                        # E-commerce order analytics pipeline
+│       ├── weather_api_pipeline.py                      # Weather API extraction demo
 │       ├── parametrized_preparator_v4_quality.py        # Generic quality pipeline
 │       ├── parametrized_preparator_v4_ia.py             # Pipeline with LLM text completion
 │       ├── parametrized_preparator_v4_quality_join.py   # Pipeline with dataset join
@@ -133,7 +136,7 @@ etl_microservices/
 │   ├── __init__.py
 │   ├── llm_provider.py            # Abstract LLMProvider + OpenAIProvider + LocalProvider
 │   ├── pipeline_agent.py          # NL → YAML pipeline generation + validation
-│   └── pipeline_compiler.py       # Pipeline execution via Preparator SDK
+│   └── pipeline_compiler.py       # Parallel pipeline execution via Preparator SDK (dispatch registry + topological layering)
 │
 ├── streamlit_app/
 │   ├── app.py                     # Streamlit UI: chat, YAML editor, execution monitor, service catalog, data preview/download, health dashboard
@@ -150,9 +153,32 @@ etl_microservices/
 │   ├── run_benchmark.py           # Runner with charts (matplotlib + plotly)
 │   └── __init__.py
 │
+├── data/
+│   └── demo/                       # Bundled demo datasets for out-of-the-box testing
+│       ├── hr_sample.csv           # IBM HR Attrition sample (501 rows)
+│       └── ecommerce_orders.csv    # E-commerce orders sample (501 rows)
+│
+├── docs/
+│   └── extending.md               # Developer guide: add new services & create pipelines
+│
+├── examples/
+│   └── pipelines/                  # Ready-to-use YAML pipeline definitions
+│       ├── hr_analytics.yaml
+│       ├── ecommerce_analytics.yaml
+│       ├── weather_data.yaml
+│       └── README.md
+│
+├── templates/
+│   └── new_service/                # Scaffolding template with placeholders for new services
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       ├── run.py
+│       ├── README.md               # Step-by-step checklist
+│       └── app/
+│
 ├── tests/
-│   ├── conftest.py                # Shared fixtures (sample Arrow tables, IPC data)
-│   ├── unit/                      # 12 test files for business logic functions
+│   ├── conftest.py                # Shared fixtures (sample Arrow tables, IPC data, services_config)
+│   ├── unit/                      # 17 test files (208 tests total with integration)
 │   └── integration/               # 2 test files (Flask test client + Preparator SDK)
 │
 ├── .github/
@@ -265,6 +291,13 @@ from common.service_utils import (
     parse_x_params,                    # Parse X-Params header (ValueError on bad JSON)
     save_metadata,                     # Write metadata JSON file
 )
+
+# Path security & dataset directory management
+from common.path_utils import (
+    sanitize_dataset_name,             # Validate/sanitize dataset name
+    resolve_input_path,                # Resolve and validate input file paths
+    ensure_dataset_dirs,               # Create dataset + metadata directories
+)
 ```
 
 ### Flask App Factory Pattern (`__init__.py`)
@@ -283,8 +316,8 @@ Every service's `create_app()` now includes:
 | Module | Purpose |
 |---|---|
 | `ai_agent/llm_provider.py` | Abstract `LLMProvider` + `OpenAIProvider` (GPT-4o-mini default) + `LocalProvider` (calls text-completion-llm-service) |
-| `ai_agent/pipeline_agent.py` | `PipelineAgent`: builds system prompt from `service_registry.json`, calls LLM to generate YAML, validates structure + services + params + dependencies. Can be instantiated without LLM (via `__new__()`) for validation-only use (e.g., Streamlit UI). |
-| `ai_agent/pipeline_compiler.py` | `PipelineCompiler`: executes validated pipeline definition step-by-step via Preparator SDK, returns `PipelineResult` with per-step metrics + `correlation_id`. Supports `join_datasets` (2 `depends_on` entries as input datasets). Exposes `last_step_outputs` dict for UI data preview. |
+| `ai_agent/pipeline_agent.py` | `PipelineAgent`: builds system prompt from `service_registry.json`, calls LLM to generate YAML, validates structure + services + params + dependencies. Standalone `validate_pipeline()` module-level function enables validation-only use without instantiating the agent (e.g., Streamlit UI). |
+| `ai_agent/pipeline_compiler.py` | `PipelineCompiler`: executes validated pipeline definitions via Preparator SDK with **parallel execution** of independent steps (topological layering via Kahn’s algorithm + `ThreadPoolExecutor`). Uses a **dispatch registry** (`_build_dispatch_registry()`) for extensibility—add new services via `register_service()` without if/elif chains. Returns `PipelineResult` with per-step metrics + `correlation_id`. Supports `join_datasets` (2 `depends_on` entries). Exposes `last_step_outputs` dict for UI data preview. |
 | `schemas/service_registry.json` | Complete metadata for all 11 services: name, type, description, endpoint, input/output formats, params with types/required/defaults/enums |
 | `schemas/pipeline_schema.json` | JSON Schema for pipeline definitions |
 
@@ -356,6 +389,8 @@ Files stored at `/app/data/<dataset_name>/xcom/<step>_<timestamp>_<uuid>.arrow`.
 | DAG ID | Description |
 |---|---|
 | `hr_analytics_pipeline` | 6-step HR analytics (extract → quality → drop cols → outliers → clean → load) |
+| `ecommerce_pipeline` | E-commerce order analytics (extract → quality → clean → outliers → load) |
+| `weather_api_pipeline` | Weather API extraction demo (extract API → quality → load) |
 | `parametrized_preparator_v4_quality` | Generic quality pipeline (extract → quality → outliers → clean → load) |
 | `parametrized_preparator_v4_ia` | Pipeline with LLM text completion step |
 | `parametrized_preparator_v4_quality_join` | Pipeline with two-dataset join |
@@ -417,18 +452,24 @@ Single bridge network `etl-network`. Services reference each other by container 
 
 ```
 tests/
-├── conftest.py           # Shared fixtures: sample_arrow_table, sample_ipc_data, etc.
+├── conftest.py           # Shared fixtures: sample_arrow_table, sample_ipc_data, services_config, etc.
 ├── unit/                 # Test pure business logic (no HTTP)
 │   ├── test_arrow_utils.py
 │   ├── test_clean.py          # 14 tests (drop + 7 fill strategies + columns filter + validation)
 │   ├── test_columns.py
 │   ├── test_dq.py             # 20 tests (min_rows, null_ratio, duplicates, types, unique, range, completeness)
+│   ├── test_extract_api.py    # 7 tests (URL validation, auth, public/private API handling)
+│   ├── test_extract_csv.py    # 6 tests (CSV loading, path resolution, error handling)
+│   ├── test_extract_excel.py  # 6 tests (Excel loading, path resolution, error handling)
+│   ├── test_extract_sql.py    # 18 tests (SQL validation, injection prevention, query execution)
 │   ├── test_health.py         # 10 tests (health response structure, env vars, volume checks)
 │   ├── test_join.py
-│   ├── test_load.py           # 8 tests (csv, json, xlsx, parquet, roundtrip, unsupported, edge cases)
+│   ├── test_load.py           # 11 tests (csv, json, xlsx, parquet, roundtrip, xls normalization, edge cases)
 │   ├── test_logging_config.py # 14 tests (JSON formatter, CorrelationAdapter, configure, no-dup handlers)
 │   ├── test_outliers.py
 │   ├── test_path_utils.py
+│   ├── test_pipeline_agent.py    # 16 tests (YAML generation, validation, schema compliance)
+│   ├── test_pipeline_compiler.py # 21 tests (dispatch, topological layers, parallel execution, error handling)
 │   └── test_service_utils.py  # 11 tests (counters, correlation ID, parse_x_params, save_metadata)
 └── integration/          # Test Flask endpoints + Preparator SDK
     ├── test_service_endpoints.py
@@ -442,6 +483,7 @@ tests/
 - `sample_arrow_table_with_outliers` — 100 rows with 2 injected outliers
 - `large_arrow_table` — 100k rows for performance testing
 - `sample_ipc_data` / `sample_ipc_data_with_nulls` — serialized Arrow IPC bytes
+- `services_config` — test service URL configuration fixture
 
 ### Important: sys.path Constraint
 
@@ -475,7 +517,9 @@ make lint              # ruff linter
 
 ## 10. Adding a New Microservice (Step-by-Step)
 
-1. **Create directory:** `services/<name>/` with `Dockerfile`, `requirements.txt`, `run.py`, `app/__init__.py`, `app/routes.py`, `app/<logic>.py`
+A ready-to-copy scaffolding template is available in `templates/new_service/` with placeholder syntax. A comprehensive developer guide is in `docs/extending.md`.
+
+1. **Create directory:** Copy `templates/new_service/` to `services/<name>/` and replace placeholders (`{{SERVICE_NAME}}`, `{{SERVICE_PORT}}`, etc.).
 2. **Logic module:** Pure function — takes `pyarrow.Table` + params, returns `pyarrow.Table`. No Flask imports.
 3. **Routes:** Follow the endpoint pattern (section 5). Include REQUEST/SUCCESS/ERROR Prometheus counters. Include `/health` endpoint.
 4. **Dockerfile:** Copy `common/`, install deps, set `PYTHONPATH=/app/services`, use gunicorn CMD with HEALTHCHECK.
@@ -563,11 +607,11 @@ These are hard-won insights from building and debugging the platform. They shoul
 
 ### Observability Lessons
 
-15. **Centralized utilities eliminate boilerplate.** The `common/service_utils.py` module extracted ~800 lines of duplicated code (Prometheus counters, /health, /metrics, X-Params parsing, metadata writing) from 11 services into shared functions. This reduced each `routes.py` by ~60–80 lines and ensures consistent behavior across all services.
+16. **Centralized utilities eliminate boilerplate.** The `common/service_utils.py` module extracted duplicated code (Prometheus counters, /health, /metrics, X-Params parsing, metadata writing) from 11 services into shared functions. This ensures consistent behavior across all services.
 
-16. **Correlation ID must be generated at the edge.** The Preparator SDK generates a UUID `correlation_id` on construction and includes it in every HTTP request (`X-Correlation-ID` header). Services read or generate it via `get_correlation_id()`. This enables end-to-end tracing of a pipeline request across all service logs.
+17. **Correlation ID must be generated at the edge.** The Preparator SDK generates a UUID `correlation_id` on construction and includes it in every HTTP request (`X-Correlation-ID` header). Services read or generate it via `get_correlation_id()`. This enables end-to-end tracing of a pipeline request across all service logs.
 
-17. **Structured logging must be opt-in at startup.** Using `configure_service_logging()` in `create_app()` (not at module level) prevents duplicate handlers when Flask reloads. The `JSONFormatter` outputs single-line JSON with timestamp, level, service, message, correlation_id, and dataset_name.
+18. **Structured logging must be opt-in at startup.** Using `configure_service_logging()` in `create_app()` (not at module level) prevents duplicate handlers when Flask reloads. The `JSONFormatter` outputs single-line JSON with timestamp, level, service, message, correlation_id, and dataset_name.
 
 ---
 

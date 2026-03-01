@@ -1,6 +1,6 @@
 # ArrowFlow
 
-[![CI](https://github.com/VTvito/etl_microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/VTvito/etl_microservices/actions/workflows/ci.yml)
+[![CI](https://github.com/VTvito/arrowflow/actions/workflows/ci.yml/badge.svg)](https://github.com/VTvito/arrowflow/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yml)
@@ -34,8 +34,8 @@
 ### Setup
 
 ```bash
-git clone https://github.com/VTvito/etl_microservices.git
-cd etl_microservices
+git clone https://github.com/VTvito/arrowflow.git
+cd arrowflow
 make quickstart
 ```
 

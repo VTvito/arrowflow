@@ -39,15 +39,8 @@ cd arrowflow
 make quickstart
 ```
 
-This will build all images, start 17 containers, and load the demo datasets.
-
-### Create Airflow Admin (first time only)
-
-```bash
-docker exec -it airflow airflow users create \
-  --username admin --firstname Admin --lastname User \
-  --role Admin --email admin@example.com --password admin
-```
+This will build all images, start 18 containers, and load the demo datasets.
+The Airflow admin user (`admin`/`admin`) is created automatically on first boot.
 
 ### Open the UIs
 
@@ -55,8 +48,9 @@ docker exec -it airflow airflow users create \
 |---|---|---|
 | **Streamlit** (AI Pipeline Builder) | http://localhost:8501 | &mdash; |
 | **Airflow** | http://localhost:8080 | admin / admin |
-| **Grafana** | http://localhost:3000 | admin / *GF_SECURITY_ADMIN_PASSWORD from .env* |
+| **Grafana** (pre-provisioned dashboard) | http://localhost:3000 | admin / *GF_SECURITY_ADMIN_PASSWORD from .env* |
 | **Prometheus** | http://localhost:9090 | &mdash; |
+| **cAdvisor** (container resources) | http://localhost:8088 | &mdash; |
 
 ### Try a Demo Pipeline
 
@@ -234,6 +228,14 @@ cp -r templates/new_service services/my-service
 ```
 
 Full walkthrough: [docs/extending.md](docs/extending.md)
+
+### Documentation
+
+| Doc | Contents |
+|---|---|
+| [docs/demo-guide.md](docs/demo-guide.md) | Step-by-step demo: UI, YAML editor, SDK, Airflow |
+| [docs/architecture.md](docs/architecture.md) | System design, Arrow IPC, parallelism, Gunicorn, security |
+| [docs/access-credentials.md](docs/access-credentials.md) | All service URLs, credentials, env vars |
 
 ### Project Structure
 

@@ -1,10 +1,12 @@
-# Copilot Instructions — ETL Microservices Platform
+# Copilot Instructions — ArrowFlow (ETL Microservices Platform)
 
 > These instructions provide context for AI agents (GitHub Copilot, Copilot Chat, agentic workflows) working on this codebase. They describe architecture, conventions, patterns, constraints, and lessons learned so that an AI agent can make correct decisions without re-discovering project structure.
 
 ---
 
 ## 1. Project Identity
+
+**Project name:** ArrowFlow (GitHub repo: `VTvito/arrowflow`).
 
 **What this is:** An AI-assisted, modular ETL (Extract, Transform, Load) platform where each data operation is an independent Flask microservice. Pipelines are orchestrated via Apache Airflow DAGs or via the AI agent (natural language → YAML → execution).
 
@@ -93,8 +95,8 @@ All services propagate `X-Correlation-ID` header for end-to-end request tracing.
 
 ```
 etl_microservices/
-├── docker-compose.yml              # Full stack: 11 services + postgres + airflow + prometheus + grafana + streamlit
-├── Makefile                        # Common commands: up, down, build, test, lint, benchmark
+├── docker-compose.yml              # Full stack: 11 ETL services + cAdvisor + postgres + airflow + prometheus + grafana + streamlit (18 containers total)
+├── Makefile                        # Common commands: up, down, build, test, lint, benchmark, demo-data, quickstart
 ├── pyproject.toml                  # Project metadata, pytest/ruff/coverage config
 ├── README.md                       # Project overview and quickstart
 ├── .env                            # Environment variables (not committed)
@@ -159,7 +161,10 @@ etl_microservices/
 │       └── ecommerce_orders.csv    # E-commerce orders sample (501 rows)
 │
 ├── docs/
-│   └── extending.md               # Developer guide: add new services & create pipelines
+│   ├── extending.md               # Developer guide: add new services & create pipelines
+│   ├── demo-guide.md              # Step-by-step usage guide (UI, YAML editor, SDK, Airflow)
+│   ├── access-credentials.md      # All service URLs, ports, credentials, env vars
+│   └── architecture.md            # Technical design: Arrow IPC, parallelism, Gunicorn, security
 │
 ├── examples/
 │   └── pipelines/                  # Ready-to-use YAML pipeline definitions
@@ -186,7 +191,13 @@ etl_microservices/
 │   └── workflows/ci.yml           # GitHub Actions: lint → test-unit → test-integration → docker build
 │
 └── prometheus/
-    └── prometheus.yml             # Scrape targets for all 11 services
+    ├── prometheus.yml              # Scrape targets for all 11 ETL services + cAdvisor + prometheus self-scrape
+    └── grafana/
+        ├── provisioning/
+        │   ├── datasources/prometheus.yml  # Auto-configures Prometheus datasource (uid: prometheus-etl)
+        │   └── dashboards/dashboards.yml   # Dashboard provider pointing to provisioned-dashboards/
+        └── dashboards/
+            └── etl_services_overview.json  # Pre-built 15-panel monitoring dashboard (uid: etl-monitoring-v1)
 ```
 
 ---
@@ -406,14 +417,22 @@ Files stored at `/app/data/<dataset_name>/xcom/<step>_<timestamp>_<uuid>.arrow`.
 - **Base image:** `python:3.9-slim` for all services
 - **Shared volume:** `etl-containers-shared-data` mounted at `/app/data` across all containers
 
-### Docker Compose Services
+### Docker Compose Services (18 total)
 
 | Category | Services |
 |---|---|
-| **Infrastructure** | postgres, statsd-exporter, prometheus, grafana |
+| **Infrastructure** | postgres, statsd-exporter, prometheus, grafana, cadvisor |
 | **Orchestration** | airflow (webserver + scheduler) |
 | **ETL Services** | 11 microservices (ports 5001–5012) |
 | **UI** | streamlit-app (port 8501) |
+
+**cAdvisor**: `gcr.io/cadvisor/cadvisor:latest`, port 8088→8080, `--docker_only=true`. Provides per-container CPU/memory metrics scraped by Prometheus.
+
+**Grafana provisioning**: datasource and dashboard are auto-loaded at startup from `prometheus/grafana/provisioning/`. No manual configuration needed. Dashboard uid: `etl-monitoring-v1`.
+
+**Prometheus metric naming**: counters follow the pattern `{slug}_requests_total` / `{slug}_success_total` / `{slug}_error_total` where slug is the service key (e.g., `extract_csv_requests_total`). PromQL aggregation pattern: `{__name__=~".*_requests_total", job=~".+-service"}`.
+
+**Airflow admin user**: created automatically at first boot by the Dockerfile CMD (idempotent — skipped if already exists). Credentials: `admin` / `admin`.
 
 ### Network
 
@@ -641,6 +660,7 @@ These are hard-won insights from building and debugging the platform. They shoul
 | Task | Command / File |
 |---|---|
 | Start all services | `make up` or `docker compose up -d` |
+| Load demo datasets | `make demo-data` |
 | Run tests | `make test` |
 | Lint | `make lint` |
 | Add new service | Follow section 10 checklist |
@@ -648,6 +668,10 @@ These are hard-won insights from building and debugging the platform. They shoul
 | Run benchmark | `make benchmark-all` |
 | Trigger HR pipeline | Airflow UI → `hr_analytics_pipeline` → Trigger with config |
 | Access Streamlit | http://localhost:8501 |
+| Grafana dashboard | http://localhost:3000 (admin / GF_SECURITY_ADMIN_PASSWORD) |
+| Service credentials | `docs/access-credentials.md` |
+| Architecture doc | `docs/architecture.md` |
+| Demo walkthrough | `docs/demo-guide.md` |
 
 ---
 

@@ -122,6 +122,29 @@ class Preparator:
         self._handle_error_response(resp, service_key)
         return resp.content  # Arrow IPC bytes in case of success
 
+    def run_service_ipc_in_json_out_with_header(self, service_key, ipc_data, header_dict):
+        """
+        Executes a POST request to the microservice identified by `service_key`,
+        sending `ipc_data` in the body and parameters (header_dict) in a header called 'X-Params' (as JSON).
+        Returns the parsed JSON response body as a dict (used by services that respond with JSON, e.g. load-data).
+        """
+        header_json = json.dumps(header_dict)
+        self.logger.info(f"Calling {service_key} with IPC data (size={len(ipc_data)}). Header: {header_json}")
+        url = self.services[service_key]
+
+        resp = self.session.post(
+            url,
+            data=ipc_data,  # Arrow IPC in body
+            headers={
+                "Content-Type": "application/vnd.apache.arrow.stream",
+                "X-Params": header_json,
+                "X-Correlation-ID": self.correlation_id,
+            },
+            timeout=self.timeout
+        )
+        self._handle_error_response(resp, service_key)
+        return resp.json()  # JSON dict in case of success
+
     # ================================================================
     # EXTRACTION
     # ================================================================
@@ -297,9 +320,11 @@ class Preparator:
     def load_data(self, ipc_data, format='csv', dataset_name="default_dataset"):
         """
         'load_data' microservice
+        The load-data-service returns a JSON status response (not Arrow IPC),
+        so we use run_service_ipc_in_json_out_with_header.
         """
         header_dict = {
             "dataset_name": dataset_name,
             "format": format
         }
-        return self.run_service_ipc_in_ipc_out_with_header("load_data", ipc_data, header_dict)
+        return self.run_service_ipc_in_json_out_with_header("load_data", ipc_data, header_dict)

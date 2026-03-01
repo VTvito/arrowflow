@@ -52,11 +52,11 @@ curl http://localhost:5002/health  # clean-nan-service
 
 http://localhost:8501
 
-You'll see four tabs: **Chat**, **YAML Editor**, **Service Catalog**, **Health Dashboard**.
+You'll see four tabs: **Pipeline Editor**, **Execution**, **Datasets**, **Services**.
 
 ### 2. Chat Tab — describe the pipeline in natural language
 
-In the text box, type something like:
+In the chat panel, type something like:
 
 > *"Load the HR dataset, check data quality, remove outliers on monthly salary and save as CSV"*
 
@@ -88,7 +88,7 @@ cat examples/pipelines/hr_analytics.yaml
 
 ### 2. Paste it in the editor
 
-Open http://localhost:8501 → tab **YAML Editor** → paste the content.
+Open http://localhost:8501 → tab **Pipeline Editor** → paste the content in the YAML editor.
 
 The validator shows any errors (nonexistent service, missing parameter, cycle in graph)
 before execution even starts.
@@ -225,6 +225,21 @@ Click **Trigger DAG w/ config** and pass JSON:
 
 ---
 
+## Browsing Results — Dataset Explorer
+
+After any pipeline completes (UI, Airflow, or SDK), output files and metadata are written
+to the shared volume at `/app/data/<dataset_name>/`.
+
+Open http://localhost:8501 → **Datasets** tab to:
+
+- **Output Files** — preview CSV, Parquet, JSON, or Excel files and download them directly
+- **Pipeline Runs** — view run history grouped by `correlation_id`, with per-step duration, row counts, and service details
+- **Raw Metadata** — inspect the JSON metadata files written by each service
+
+Select any dataset from the sidebar dropdown to explore its contents.
+
+---
+
 ## What to observe during execution
 
 ### Metrics in Grafana
@@ -270,5 +285,6 @@ docker exec extract-csv-service ls /app/data/hr_demo/metadata/
 | `curl /health` → connection refused | service not started | `docker compose ps` + `docker compose up -d <service>` |
 | Streamlit shows "AI agent not available" | `OPENAI_API_KEY` missing | add key to `.env` + `docker compose restart streamlit-app` |
 | Pipeline fails with "file not found" | demo data not loaded | `make demo-data` |
+| Datasets tab shows no datasets | no pipelines have run yet | run a pipeline first, then refresh |
 | Airflow task fail "No module named..." | Airflow container not updated | `docker compose up -d --build airflow` |
 | Grafana "No data" in panels | services not scraped yet | wait 15s or run a pipeline to generate traffic |

@@ -7,13 +7,18 @@ using the microservices platform.
 Run: streamlit run streamlit_app/app.py
 """
 
+import glob
 import json
 import os
 import sys
 import time
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import pyarrow.ipc as pa_ipc
+import pyarrow.parquet as pq
 import requests
 import streamlit as st
 import yaml
@@ -404,6 +409,223 @@ def render_service_catalog():
                 st.dataframe(pd.DataFrame(params_data), use_container_width=True, hide_index=True)
 
 
+# ── Dataset Explorer ──
+
+DATA_ROOT = os.getenv("ETL_DATA_ROOT", "/app/data")
+
+# Folders that contain raw demo assets, not pipeline outputs
+_IGNORE_DATASETS = {"demo"}
+
+
+def _scan_datasets():
+    """Discover datasets on the shared volume. Returns sorted list of (name, path) tuples."""
+    if not os.path.isdir(DATA_ROOT):
+        return []
+    entries = []
+    for name in sorted(os.listdir(DATA_ROOT)):
+        full = os.path.join(DATA_ROOT, name)
+        if os.path.isdir(full) and name not in _IGNORE_DATASETS:
+            entries.append((name, full))
+    return entries
+
+
+def _load_metadata_files(dataset_path):
+    """Load all metadata JSONs for a dataset, newest first."""
+    meta_dir = os.path.join(dataset_path, "metadata")
+    if not os.path.isdir(meta_dir):
+        return []
+    items = []
+    for fp in sorted(glob.glob(os.path.join(meta_dir, "metadata_*.json")), reverse=True):
+        try:
+            with open(fp) as f:
+                items.append(json.load(f))
+        except Exception:
+            pass
+    return items
+
+
+def _list_output_files(dataset_path):
+    """List processed output files with size and mtime."""
+    proc_dir = os.path.join(dataset_path, "processed")
+    if not os.path.isdir(proc_dir):
+        return []
+    files = []
+    for name in sorted(os.listdir(proc_dir), reverse=True):
+        fp = os.path.join(proc_dir, name)
+        if os.path.isfile(fp):
+            stat = os.stat(fp)
+            files.append({
+                "name": name,
+                "path": fp,
+                "size_bytes": stat.st_size,
+                "mtime": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            })
+    return files
+
+
+def _read_output_preview(filepath, max_rows=100):
+    """Read a processed output file into a DataFrame for preview."""
+    ext = Path(filepath).suffix.lower()
+    if ext == ".csv":
+        return pd.read_csv(filepath, nrows=max_rows)
+    elif ext == ".parquet":
+        table = pq.read_table(filepath)
+        return table.to_pandas().head(max_rows)
+    elif ext == ".json":
+        return pd.read_json(filepath).head(max_rows)
+    elif ext in (".xlsx", ".xls"):
+        return pd.read_excel(filepath, nrows=max_rows)
+    return None
+
+
+def _group_runs(metadata_items):
+    """Group metadata entries by correlation_id → pipeline runs."""
+    runs = defaultdict(list)
+    for m in metadata_items:
+        cid = m.get("correlation_id", "unknown")
+        runs[cid].append(m)
+    # Sort steps within each run by timestamp
+    for cid in runs:
+        runs[cid].sort(key=lambda m: m.get("timestamp", ""))
+    return dict(runs)
+
+
+def _format_bytes(n):
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / (1024 * 1024):.1f} MB"
+
+
+def render_dataset_explorer():
+    """Browse datasets, view pipeline run history, preview & download output files."""
+    st.header("📂 Dataset Explorer")
+
+    datasets = _scan_datasets()
+    if not datasets:
+        st.info("No datasets found. Run a pipeline first, or load demo data with `make demo-data`.")
+        return
+
+    # Dataset selector
+    ds_names = [name for name, _ in datasets]
+    selected = st.selectbox("Select dataset", ds_names, key="ds_explorer_select")
+    ds_path = dict(datasets)[selected]
+
+    # ── Output Files ──
+    output_files = _list_output_files(ds_path)
+    metadata_items = _load_metadata_files(ds_path)
+
+    tab_out, tab_runs, tab_meta = st.tabs(["📄 Output Files", "🔄 Pipeline Runs", "🔍 Raw Metadata"])
+
+    # ─── Tab 1: Output files with preview & download ───
+    with tab_out:
+        if not output_files:
+            st.info(f"No output files yet for **{selected}**. The `load_data` step writes files here.")
+        else:
+            st.caption(f"{len(output_files)} file(s) in `{selected}/processed/`")
+
+            for i, finfo in enumerate(output_files):
+                ext = Path(finfo['name']).suffix.lstrip('.')
+                icon = {"csv": "📊", "parquet": "🗂️", "json": "📋", "xlsx": "📗", "xls": "📗"}.get(ext, "📄")
+                col_info, col_dl = st.columns([3, 1])
+                with col_info:
+                    st.markdown(
+                        f"{icon} **{finfo['name']}**  \n"
+                        f"`{_format_bytes(finfo['size_bytes'])}` · "
+                        f"{finfo['mtime'].strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                    )
+                with col_dl:
+                    with open(finfo["path"], "rb") as fp:
+                        mime = {
+                            "csv": "text/csv", "json": "application/json",
+                            "parquet": "application/octet-stream",
+                            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        }.get(ext, "application/octet-stream")
+                        st.download_button(
+                            "⬇️ Download", fp.read(), finfo["name"], mime,
+                            key=f"dl_{selected}_{i}", use_container_width=True,
+                        )
+
+                # Preview
+                with st.expander(f"Preview {finfo['name']}", expanded=(i == 0)):
+                    try:
+                        preview_df = _read_output_preview(finfo["path"])
+                        if preview_df is not None:
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Rows", preview_df.shape[0])
+                            c2.metric("Columns", preview_df.shape[1])
+                            c3.metric("Format", ext.upper())
+                            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                        else:
+                            st.warning(f"Preview not supported for .{ext} files.")
+                    except Exception as e:
+                        st.warning(f"Cannot preview: {e}")
+
+                if i < len(output_files) - 1:
+                    st.divider()
+
+    # ─── Tab 2: Pipeline runs grouped by correlation ID ───
+    with tab_runs:
+        if not metadata_items:
+            st.info(f"No pipeline run history for **{selected}**.")
+        else:
+            runs = _group_runs(metadata_items)
+            st.caption(f"{len(runs)} pipeline run(s) detected")
+
+            for run_idx, (cid, steps) in enumerate(runs.items()):
+                first_ts = steps[0].get("timestamp", "?")
+                last_svc = steps[-1].get("service_name", "?")
+                n_steps = len(steps)
+                total_dur = sum(s.get("duration_sec", 0) for s in steps)
+
+                header = f"Run {run_idx + 1} — {n_steps} steps · {total_dur:.2f}s · {first_ts}"
+                with st.expander(header, expanded=(run_idx == 0)):
+                    st.caption(f"Correlation ID: `{cid}`")
+
+                    # Steps table
+                    rows_data = []
+                    for s in steps:
+                        svc = s.get("service_name", "?")
+                        svc_type_icon = "📥" if "extract" in svc else ("📤" if "load" in svc else "⚙️")
+                        rows_out = s.get("rows_out", s.get("rows_in", "—"))
+                        extra = ""
+                        if "removed_outliers" in s:
+                            extra = f"removed {s['removed_outliers']} outliers"
+                        elif "dq_checks" in s:
+                            checks = s["dq_checks"]
+                            passed = sum(1 for v in checks.values() if v is True or (isinstance(v, dict) and v.get("pass")))
+                            extra = f"{passed}/{len(checks)} checks passed"
+                        elif "output_file" in s:
+                            extra = Path(s["output_file"]).name
+                        elif "file_path" in s:
+                            extra = Path(s["file_path"]).name
+                        elif s.get("strategy"):
+                            extra = f"strategy={s['strategy']}"
+
+                        rows_data.append({
+                            "": svc_type_icon,
+                            "Service": svc,
+                            "Duration": f"{s.get('duration_sec', 0):.3f}s",
+                            "Rows": str(rows_out),
+                            "Detail": extra,
+                        })
+
+                    st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
+
+    # ─── Tab 3: Raw metadata (for debugging) ───
+    with tab_meta:
+        if not metadata_items:
+            st.info("No metadata files.")
+        else:
+            st.caption(f"{len(metadata_items)} metadata file(s)")
+            for m in metadata_items[:20]:  # cap at 20 to avoid slowness
+                svc = m.get("service_name", "unknown")
+                ts = m.get("timestamp", "?")
+                with st.expander(f"{svc} — {ts}"):
+                    st.json(m)
+
+
 def _default_pipeline_yaml() -> str:
     return """pipeline:
   name: my_pipeline
@@ -438,13 +660,15 @@ def main():
     init_session_state()
     render_sidebar()
 
-    tab1, tab2, tab3 = st.tabs(["📝 Pipeline Editor", "🚀 Execution", "📚 Services"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Pipeline Editor", "🚀 Execution", "📂 Datasets", "📚 Services"])
 
     with tab1:
         render_pipeline_editor()
     with tab2:
         render_execution_panel()
     with tab3:
+        render_dataset_explorer()
+    with tab4:
         render_service_catalog()
 
 

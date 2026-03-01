@@ -17,7 +17,7 @@
 - **Natural Language Pipelines** &mdash; Describe what you need in plain text; the AI agent generates and executes a validated YAML pipeline
 - **11 Composable Services** &mdash; Extract (CSV, SQL, API, Excel), Transform (clean, filter, join, quality checks, outlier detection, LLM), Load (CSV, Excel, JSON, Parquet)
 - **High-Performance Data Transfer** &mdash; Apache Arrow IPC binary format between all services (zero-copy, no CSV/JSON parsing overhead)
-- **Visual Pipeline Builder** &mdash; Streamlit UI with chat panel, YAML editor, real-time execution monitor, and data preview/download
+- **Visual Pipeline Builder** &mdash; Streamlit UI with YAML editor, real-time execution monitor, dataset explorer (browse outputs, preview, download), and service catalog
 - **Airflow Orchestration** &mdash; Production-ready DAGs with file-based XCom for large datasets
 - **Full Observability** &mdash; Prometheus metrics + Grafana dashboards + structured JSON logging + correlation ID tracing
 - **Extensible** &mdash; Add a new service in minutes using the included scaffold template and step-by-step guide
@@ -46,7 +46,7 @@ The Airflow admin user (`admin`/`admin`) is created automatically on first boot.
 
 | Interface | URL | Credentials |
 |---|---|---|
-| **Streamlit** (AI Pipeline Builder) | http://localhost:8501 | &mdash; |
+| **Streamlit** (Pipeline Builder + Dataset Explorer) | http://localhost:8501 | &mdash; |
 | **Airflow** | http://localhost:8080 | admin / admin |
 | **Grafana** (pre-provisioned dashboard) | http://localhost:3000 | admin / *GF_SECURITY_ADMIN_PASSWORD from .env* |
 | **Prometheus** | http://localhost:9090 | &mdash; |
@@ -63,6 +63,8 @@ Trigger one of the pre-built DAGs from the Airflow UI:
 | `weather_api_pipeline` | Live weather API (Open-Meteo, no key needed) &rarr; quality &rarr; clean &rarr; save as Parquet |
 
 Or paste a YAML from [`examples/pipelines/`](examples/pipelines/) into the Streamlit YAML Editor.
+
+After execution, switch to the **Datasets** tab to browse output files, preview data, and download results.
 
 ---
 
@@ -243,7 +245,7 @@ Full walkthrough: [docs/extending.md](docs/extending.md)
 <summary>Click to expand</summary>
 
 ```
-├── docker-compose.yml          # Full stack (17 containers)
+├── docker-compose.yml          # Full stack (18 containers)
 ├── Makefile                    # Common commands
 ├── data/demo/                  # Bundled demo datasets
 │   ├── hr_sample.csv

@@ -35,6 +35,13 @@ def ensure_dataset_dirs(dataset_name):
     dataset_folder = resolved_dataset_folder
     metadata_dir = os.path.join(dataset_folder, "metadata")
     os.makedirs(metadata_dir, exist_ok=True)
+    # Ensure directories are world-writable so all containers (services run as
+    # root, Airflow runs as uid 50000) can read/write to the same shared volume.
+    try:
+        os.chmod(dataset_folder, 0o777)
+        os.chmod(metadata_dir, 0o777)
+    except OSError:
+        pass  # best-effort; may fail on read-only mounts
     return dataset_folder, metadata_dir
 
 

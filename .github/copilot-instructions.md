@@ -141,7 +141,7 @@ etl_microservices/
 │   └── pipeline_compiler.py       # Parallel pipeline execution via Preparator SDK (dispatch registry + topological layering)
 │
 ├── streamlit_app/
-│   ├── app.py                     # Streamlit UI: chat, YAML editor, execution monitor, service catalog, data preview/download, health dashboard
+│   ├── app.py                     # Streamlit UI: pipeline editor, YAML validation, execution monitor, dataset explorer (browse/preview/download outputs), service catalog
 │   ├── Dockerfile
 │   └── requirements.txt
 │
@@ -646,7 +646,7 @@ These are hard-won insights from building and debugging the platform. They shoul
 | **Orchestration** | Apache Airflow | 2.10.4 | PostgreSQL 16 backend, DAG-based |
 | **AI (cloud)** | OpenAI API | GPT-4o-mini default | Pipeline generation |
 | **AI (local)** | HuggingFace Transformers | Llama 3.2 1B Instruct | Text completion service |
-| **UI** | Streamlit | 1.30+ | Chat + pipeline builder + data preview/download + health dashboard |
+| **UI** | Streamlit | 1.30+ | Pipeline editor + execution monitor + dataset explorer + service catalog |
 | **Containers** | Docker Compose | v2 | Single bridge network |
 | **Monitoring** | Prometheus + Grafana | latest | Per-service metrics |
 | **Testing** | pytest | 7.x+ | Unit + integration |

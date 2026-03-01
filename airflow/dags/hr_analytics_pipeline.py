@@ -43,9 +43,9 @@ with DAG(
     description="HR People Analytics ETL pipeline (IBM HR Attrition dataset)",
     tags=["hr", "analytics", "etl", "v4"],
     params={
-        "dataset_name": Param("hr_attrition", type="string", description="Dataset identifier"),
+        "dataset_name": Param("hr_demo", type="string", description="Dataset identifier"),
         "file_path": Param(
-            "/app/data/hr_attrition/WA_Fn-UseC_-HR-Employee-Attrition.csv",
+            "/app/data/hr_demo/data.csv",
             type="string",
             description="Path to HR CSV file on shared volume",
         ),

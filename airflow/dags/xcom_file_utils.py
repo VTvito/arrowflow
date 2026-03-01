@@ -32,6 +32,12 @@ def save_ipc_to_shared(ipc_data: bytes, dataset_name: str, step_name: str) -> st
     """
     xcom_dir = os.path.join(SHARED_DATA_ROOT, dataset_name, "xcom")
     os.makedirs(xcom_dir, exist_ok=True)
+    # Ensure the dataset dir and xcom dir are writable by all containers
+    try:
+        os.chmod(os.path.join(SHARED_DATA_ROOT, dataset_name), 0o777)
+        os.chmod(xcom_dir, 0o777)
+    except OSError:
+        pass
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     unique_id = uuid.uuid4().hex[:8]

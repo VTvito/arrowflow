@@ -1,0 +1,547 @@
+{
+  "id": null,
+  "uid": "etl-monitoring-v1",
+  "title": "ETL Microservices — Monitoring Overview",
+  "description": "Health, requests, errors and container resources for all ETL microservices",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "tags": ["etl", "microservices", "monitoring"],
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Services UP",
+      "description": "Number of ETL microservices currently responding",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(up{job=~\".+-service\"} == 1) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "UP"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "green", "value": 11 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "mappings": []
+        }
+      }
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Services DOWN",
+      "description": "Number of ETL microservices not responding",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(up{job=~\".+-service\"} == 0) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "DOWN"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "mappings": []
+        }
+      }
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Request Rate (5m)",
+      "description": "Total requests/sec across all services (5-min rate)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate({__name__=~\".*_requests_total\", job=~\".+-service\"}[5m]))",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "req/s"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "mappings": []
+        }
+      }
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Global Error Rate (5m)",
+      "description": "Percentage of requests resulting in errors across all services",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate({__name__=~\".*_error_total\", job=~\".+-service\"}[5m])) / sum(rate({__name__=~\".*_requests_total\", job=~\".+-service\"}[5m])) * 100",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "Error %"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "special", "options": { "match": "nan", "result": { "text": "N/A", "color": "text" } } }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Airflow Exporter",
+      "description": "Whether the statsd-exporter (Airflow metrics bridge) is up",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "up{job=\"statsd-exporter\"}",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "statsd-exporter"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Service Health — per Service",
+      "description": "UP (1) or DOWN (0) for each ETL microservice. Green = healthy, Red = unreachable.",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 5 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "up{job=~\".+-service\"}",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": 7,
+      "type": "row",
+      "title": "ETL Request Metrics",
+      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Request Rate per Service (5m)",
+      "description": "Requests/second per microservice over a 5-minute window",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate({__name__=~\".*_requests_total\", job=~\".+-service\"}[5m])",
+          "refId": "A",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "drawStyle": "line",
+            "spanNulls": false
+          }
+        }
+      }
+    },
+
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Error Rate per Service (5m)",
+      "description": "Errors/second per microservice over a 5-minute window",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate({__name__=~\".*_error_total\", job=~\".+-service\"}[5m])",
+          "refId": "A",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity",
+            "drawStyle": "line",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Total Requests — All Time",
+      "description": "Cumulative requests received per service since last restart",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "{__name__=~\".*_requests_total\", job=~\".+-service\"}",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "minVizWidth": 0,
+        "minVizHeight": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Total Errors — All Time",
+      "description": "Cumulative errors per service since last restart",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "{__name__=~\".*_error_total\", job=~\".+-service\"}",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "minVizWidth": 0,
+        "minVizHeight": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Container Resources (cAdvisor)",
+      "gridPos": { "x": 0, "y": 26, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "CPU Usage % per Container",
+      "description": "Per-container CPU usage as a percentage of 1 core (from cAdvisor)",
+      "gridPos": { "x": 0, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{image!=\"\", name=~\".*(service|airflow|streamlit|postgres|prometheus|grafana).*\"}[2m]) * 100",
+          "refId": "A",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 6,
+            "gradientMode": "opacity",
+            "drawStyle": "line",
+            "spanNulls": false
+          }
+        }
+      }
+    },
+
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Memory Usage per Container",
+      "description": "RSS memory usage per container in bytes (from cAdvisor)",
+      "gridPos": { "x": 12, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "container_memory_rss{image!=\"\", name=~\".*(service|airflow|streamlit|postgres|prometheus|grafana).*\"}",
+          "refId": "A",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 6,
+            "gradientMode": "opacity",
+            "drawStyle": "line",
+            "spanNulls": false
+          }
+        }
+      }
+    },
+
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Container Memory Snapshot",
+      "description": "Current RSS memory usage per container",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 7 },
+      "datasource": { "uid": "prometheus-etl", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sort_desc(container_memory_rss{image!=\"\", name=~\".*(service|airflow|streamlit|postgres|prometheus|grafana).*\"})",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": { "show": false }
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns" } },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": { "name": "Container", "Value": "Memory (RSS)" },
+            "excludeByName": { "Time": true, "instance": true, "job": true, "id": true, "image": true }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Memory (RSS)" },
+            "properties": [
+              { "id": "unit", "value": "bytes" },
+              { "id": "custom.displayMode", "value": "gradient-gauge" },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 268435456}, {"color": "red", "value": 536870912}] } },
+              { "id": "color", "value": { "mode": "thresholds" } }
+            ]
+          }
+        ]
+      }
+    }
+
+  ],
+
+  "templating": { "list": [] },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": []
+}

@@ -2,8 +2,18 @@
 
 global:
   scrape_interval: 15s  # Metrics collection interval
+  evaluation_interval: 15s
 
 scrape_configs:
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'cadvisor'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['cadvisor:8080']
 
   - job_name: 'statsd-exporter'
     static_configs:

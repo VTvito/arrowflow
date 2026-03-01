@@ -14,4 +14,5 @@ RUN mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins
 ENV PYTHONPATH="/opt/airflow/"
 
 # CMD per avvio servizi (db migrate ensures schema exists on first boot)
-CMD ["bash", "-c", "airflow db migrate && (airflow webserver & airflow scheduler)"]
+# Creates admin user on first boot only (idempotent: skips if already exists)
+CMD ["bash", "-c", "airflow db migrate && (airflow users list | grep -q admin || airflow users create --username admin --password admin --firstname Admin --lastname ETL --role Admin --email admin@etl.local) && (airflow webserver & airflow scheduler)"]

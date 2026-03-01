@@ -65,6 +65,17 @@ services:
     networks:
       - etl-network
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/etc/prometheus/data
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
 
   grafana:
     image: grafana/grafana:latest
@@ -74,11 +85,43 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-change-me-strong-password}
     volumes:
       - etl-grafana-data:/var/lib/grafana
+      - ./prometheus/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./prometheus/grafana/dashboards:/etc/grafana/provisioned-dashboards:ro
     ports:
       - "3000:3000"
     networks:
       - etl-network
+    depends_on:
+      - prometheus
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /cgroup:/cgroup:ro
+    ports:
+      - "8088:8080"
+    networks:
+      - etl-network
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,process,referenced_memory,resctrl,sched,tcp,udp
+    restart: unless-stopped
 
 # Microservices
   extract-csv-service:

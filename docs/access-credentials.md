@@ -1,29 +1,29 @@
 # Access & Credentials — ETL Microservices Platform
 
-> **Security note:** I valori mostrati qui sono i **default di sviluppo** definiti in `.env.example`.  
-> In produzione, sovrascrivili tutti nel file `.env` (mai committare `.env` su Git).
+> **Security note:** Values shown here are **development defaults** defined in `.env.example`.  
+> In production, override them all in the `.env` file (never commit `.env` to Git).
 
 ---
 
 ## Quick Reference — Service URLs
 
-| Servizio | URL | Credenziali |
+| Service | URL | Credentials |
 |---|---|---|
-| **Grafana** (dashboard monitoraggio) | http://localhost:3000 | `admin` / `change-me-strong-password` |
-| **Prometheus** (metriche raw) | http://localhost:9090 | — nessuna auth — |
-| **Airflow** (orchestrazione DAG) | http://localhost:8080 | `admin` / `admin` (creato al primo avvio) |
-| **Streamlit UI** (AI pipeline builder) | http://localhost:8501 | — nessuna auth — |
-| **cAdvisor** (container metrics) | http://localhost:8088 | — nessuna auth — |
-| **PostgreSQL** (DB interno Airflow) | `localhost:5432` | `airflow` / `change-me-strong-password` |
-| **statsd-exporter** (metrics Airflow→Prom) | http://localhost:9102/metrics | — nessuna auth — |
+| **Grafana** (monitoring dashboard) | http://localhost:3000 | `admin` / `change-me-strong-password` |
+| **Prometheus** (raw metrics) | http://localhost:9090 | — no auth — |
+| **Airflow** (DAG orchestration) | http://localhost:8080 | `admin` / `admin` (created on first boot) |
+| **Streamlit UI** (AI pipeline builder) | http://localhost:8501 | — no auth — |
+| **cAdvisor** (container metrics) | http://localhost:8088 | — no auth — |
+| **PostgreSQL** (Airflow internal DB) | `localhost:5432` | `airflow` / `change-me-strong-password` |
+| **statsd-exporter** (Airflow→Prometheus metrics) | http://localhost:9102/metrics | — no auth — |
 
 ---
 
-## ETL Microservices — Porte & Health Endpoints
+## ETL Microservices — Ports & Health Endpoints
 
-Tutti i servizi espongono `GET /health` e `GET /metrics`.
+All services expose `GET /health` and `GET /metrics`.
 
-| Container | Porta | Health check |
+| Container | Port | Health check |
 |---|---|---|
 | `extract-csv-service` | 5001 | http://localhost:5001/health |
 | `clean-nan-service` | 5002 | http://localhost:5002/health |
@@ -37,82 +37,82 @@ Tutti i servizi espongono `GET /health` e `GET /metrics`.
 | `outlier-detection-service` | 5011 | http://localhost:5011/health |
 | `text-completion-llm-service` | 5012 | http://localhost:5012/health |
 
-> **Porta 5003** — non assegnata (gap storico). Prossimo servizio disponibile: **5013**.
+> **Port 5003** — unassigned (historical gap). Next available port: **5013**.
 
 ---
 
-## Variabili d'Ambiente — `.env`
+## Environment Variables — `.env`
 
-Copia `.env.example` in `.env` e modifica i valori prima di avviare lo stack.
+Copy `.env.example` to `.env` and modify values before starting the stack.
 
 ```bash
 cp .env.example .env
 ```
 
-| Variabile | Default | Descrizione |
+| Variable | Default | Description |
 |---|---|---|
-| `POSTGRES_USER` | `airflow` | Username PostgreSQL |
-| `POSTGRES_PASSWORD` | `change-me-strong-password` | Password PostgreSQL ⚠️ cambia in produzione |
-| `POSTGRES_DB` | `airflow` | Nome database PostgreSQL |
-| `GF_SECURITY_ADMIN_PASSWORD` | `change-me-strong-password` | Password admin Grafana ⚠️ cambia in produzione |
-| `ETL_DATA_ROOT` | `/app/data` | Root directory dati nei container |
-| `ALLOW_PRIVATE_API_URLS` | `false` | Permette URL privati nell'extract-api-service |
-| `HF_MODELS_PATH` | `./hf_models` | Path locale cache modelli HuggingFace |
-| `LLM_PROVIDER` | `openai` | Provider AI: `openai` oppure `local` |
-| `OPENAI_API_KEY` | *(vuoto)* | API key OpenAI — richiesta se `LLM_PROVIDER=openai` |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Modello OpenAI da usare |
+| `POSTGRES_USER` | `airflow` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | `change-me-strong-password` | PostgreSQL password ⚠️ change in production |
+| `POSTGRES_DB` | `airflow` | PostgreSQL database name |
+| `GF_SECURITY_ADMIN_PASSWORD` | `change-me-strong-password` | Grafana admin password ⚠️ change in production |
+| `ETL_DATA_ROOT` | `/app/data` | Base directory for data in containers |
+| `ALLOW_PRIVATE_API_URLS` | `false` | Allow private URLs in extract-api-service |
+| `HF_MODELS_PATH` | `./hf_models` | Local HuggingFace model cache path |
+| `LLM_PROVIDER` | `openai` | AI provider: `openai` or `local` |
+| `OPENAI_API_KEY` | *(empty)* | OpenAI API key — required if `LLM_PROVIDER=openai` |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model to use |
 
 ---
 
-## Credenziali Airflow
+## Airflow Credentials
 
-L'utente admin viene creato automaticamente al primo avvio dal `CMD` nel Dockerfile Airflow
-(idempotente: se esiste già non lo ricrea).
+The admin user is created automatically on first boot by the `CMD` in the Airflow Dockerfile
+(idempotent: skipped if it already exists).
 
-| Campo | Valore default |
+| Field | Default Value |
 |---|---|
 | Username | `admin` |
 | Password | `admin` |
 | URL | http://localhost:8080 |
 
-> Se stai usando un'istanza già avviata **prima** di questa modifica, crea l'utente manualmente:
+> If you are using an instance that started **before** this change, create the user manually:
 > ```bash
 > docker exec airflow airflow users create \
 >   --username admin --password admin \
 >   --firstname Admin --lastname ETL \
 >   --role Admin --email admin@etl.local
 > ```
-> Cambia la password dopo il primo login: `Admin → Users → admin → Edit`.
+> Change the password after first login: `Admin → Users → admin → Edit`.
 
 ---
 
 ## Grafana — Login
 
-| Campo | Valore default |
+| Field | Default Value |
 |---|---|
 | URL | http://localhost:3000 |
 | Username | `admin` |
-| Password | valore di `GF_SECURITY_ADMIN_PASSWORD` nel `.env` (default: `change-me-strong-password`) |
+| Password | value of `GF_SECURITY_ADMIN_PASSWORD` in `.env` (default: `change-me-strong-password`) |
 
-Il datasource **Prometheus** e il dashboard **ETL Microservices — Monitoring Overview** sono pre-caricati automaticamente tramite provisioning (non serve configurazione manuale).
+The **Prometheus** datasource and **ETL Microservices — Monitoring Overview** dashboard are pre-loaded automatically via provisioning (no manual configuration needed).
 
 ---
 
-## PostgreSQL — Connessione diretta
+## PostgreSQL — Direct Connection
 
-SQLAlchemy URI (usata internamente da Airflow, utile anche per ispezione diretta):
+SQLAlchemy URI (used internally by Airflow, also useful for direct inspection):
 ```
 postgresql+psycopg2://airflow:change-me-strong-password@localhost:5432/airflow
 ```
 
 ---
 
-## Checklist Sicurezza (Produzione)
+## Production Security Checklist
 
-- [ ] Cambia `POSTGRES_PASSWORD` con una password forte
-- [ ] Cambia `GF_SECURITY_ADMIN_PASSWORD` con una password forte  
-- [ ] Imposta `OPENAI_API_KEY` con la tua chiave reale
-- [ ] Aggiungi autenticazione ai microservizi (attualmente open su rete interna)
-- [ ] Non esporre le porte ETL (5001–5012) su IP pubblici
-- [ ] Abilita HTTPS per Grafana e Airflow in ambienti esposti
-- [ ] Ruota credenziali Airflow admin dopo il primo login
+- [ ] Change `POSTGRES_PASSWORD` to a strong password
+- [ ] Change `GF_SECURITY_ADMIN_PASSWORD` to a strong password  
+- [ ] Set `OPENAI_API_KEY` to your real key
+- [ ] Add authentication to microservices (currently open on internal network)
+- [ ] Do not expose ETL ports (5001–5012) on public IPs
+- [ ] Enable HTTPS for Grafana and Airflow in exposed environments
+- [ ] Rotate Airflow admin credentials after first login

@@ -30,7 +30,8 @@ coverage.xml
 .ruff_cache/
 
 # ── Model cache ──
-hf_models/
+hf_models/*
+!hf_models/.gitkeep
 
 # ── Benchmark artifacts ──
 benchmark/data/

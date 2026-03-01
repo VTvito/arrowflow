@@ -1,8 +1,8 @@
-# Usa l'immagine ufficiale di Apache Airflow
-FROM apache/airflow:latest
+# Official Apache Airflow image (pinned for reproducibility)
+FROM apache/airflow:2.10.4
 
-# Imposta le variabili di ambiente per il database e Prometheus
-ENV AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+# Metrics: export Airflow stats to Prometheus via statsd-exporter
+# DB connection string is injected at runtime by docker-compose (see AIRFLOW__DATABASE__SQL_ALCHEMY_CONN)
 ENV AIRFLOW__METRICS__STATSD_ON=True
 ENV AIRFLOW__METRICS__STATSD_HOST=statsd-exporter
 ENV AIRFLOW__METRICS__STATSD_PORT=9125

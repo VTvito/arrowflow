@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:16
     container_name: postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-airflow}
@@ -24,6 +24,8 @@ services:
       context: ./airflow
       dockerfile: Dockerfile
     container_name: airflow
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-change-me-strong-password}@postgres/${POSTGRES_DB:-airflow}
     depends_on:
       postgres:
         condition: service_healthy

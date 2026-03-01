@@ -55,7 +55,7 @@ docker exec -it airflow airflow users create \
 |---|---|---|
 | **Streamlit** (AI Pipeline Builder) | http://localhost:8501 | &mdash; |
 | **Airflow** | http://localhost:8080 | admin / admin |
-| **Grafana** | http://localhost:3000 | admin / admin |
+| **Grafana** | http://localhost:3000 | admin / *GF_SECURITY_ADMIN_PASSWORD from .env* |
 | **Prometheus** | http://localhost:9090 | &mdash; |
 
 ### Try a Demo Pipeline
@@ -303,7 +303,7 @@ See [`.env.example`](.env.example) for all available variables including databas
 | Orchestration | Apache Airflow |
 | AI Agent | OpenAI / HuggingFace Transformers |
 | UI | Streamlit |
-| Containers | Docker, Docker Compose |
+| Containers | Docker, Docker Compose (PostgreSQL 16, Airflow 2.10.4) |
 | Monitoring | Prometheus + Grafana |
 | Testing | pytest, ruff |
 | CI/CD | GitHub Actions |

@@ -11,6 +11,7 @@ quickstart: ## One-command setup: env → build → start → load demo data
 	@echo "══════════════════════════════════════════════════════"
 	@test -f .env || (cp .env.example .env && echo "✓ Created .env from .env.example")
 	@test -f .env && echo "✓ .env already exists"
+	@mkdir -p hf_models && echo "✓ hf_models/ directory ready (HuggingFace model cache)"
 	docker compose build
 	docker compose up -d
 	@echo "⏳ Waiting for services to be healthy..."

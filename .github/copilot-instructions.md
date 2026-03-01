@@ -621,10 +621,10 @@ These are hard-won insights from building and debugging the platform. They shoul
 |---|---|---|---|
 | **Runtime** | Python | 3.9 | All services and tools |
 | **Web framework** | Flask | 3.0.x | Blueprint pattern, app factory |
-| **WSGI server** | Gunicorn | 21.2.x | 4 workers default |
+| **WSGI server** | Gunicorn | 23.0.x | 4 workers default |
 | **Data format** | Apache Arrow IPC | PyArrow 18.x | Streaming format for all service data |
 | **Data processing** | Pandas | 2.2.x | Arrow → Pandas → process → Arrow (consider pyarrow.compute for perf-critical paths) |
-| **Orchestration** | Apache Airflow | latest | PostgreSQL backend, DAG-based |
+| **Orchestration** | Apache Airflow | 2.10.4 | PostgreSQL 16 backend, DAG-based |
 | **AI (cloud)** | OpenAI API | GPT-4o-mini default | Pipeline generation |
 | **AI (local)** | HuggingFace Transformers | Llama 3.2 1B Instruct | Text completion service |
 | **UI** | Streamlit | 1.30+ | Chat + pipeline builder + data preview/download + health dashboard |

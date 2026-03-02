@@ -128,9 +128,12 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
     for i, step in enumerate(pipeline["steps"]):
         step_id = step.get("id", f"step_{i}")
 
-        params = step.get("params") or {}
-        if not isinstance(params, dict):
-            errors.append(f"Step '{step_id}': 'params' must be an object/dict")
+        if "params" in step:
+            params = step.get("params")
+            if not isinstance(params, dict):
+                errors.append(f"Step '{step_id}': 'params' must be an object/dict")
+                params = {}
+        else:
             params = {}
 
         if step_id in step_ids:
@@ -178,7 +181,7 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
             if svc_type == "extract" and depends_on:
                 errors.append(f"Step '{step_id}': extract steps must not have depends_on")
             if svc_type != "extract" and not depends_on:
-                errors.append(f"Step '{step_id}': non-extract steps require depends_on")
+                errors.append(f"Step '{step_id}': non-extract steps requires depends_on")
             if service == "join_datasets" and len(depends_on) != 2:
                 errors.append(f"Step '{step_id}': join_datasets requires exactly 2 depends_on entries")
             if service != "join_datasets" and len(depends_on) > 1:

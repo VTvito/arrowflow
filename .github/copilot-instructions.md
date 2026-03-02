@@ -136,7 +136,7 @@ etl_microservices/
 │
 ├── ai_agent/
 │   ├── __init__.py
-│   ├── llm_provider.py            # Abstract LLMProvider + OpenAIProvider + LocalProvider
+│   ├── llm_provider.py            # Abstract LLMProvider + OpenAIProvider + OpenRouterProvider + LocalProvider
 │   ├── pipeline_agent.py          # NL → YAML pipeline generation + validation
 │   └── pipeline_compiler.py       # Parallel pipeline execution via Preparator SDK (dispatch registry + topological layering)
 │
@@ -326,7 +326,7 @@ Every service's `create_app()` now includes:
 
 | Module | Purpose |
 |---|---|
-| `ai_agent/llm_provider.py` | Abstract `LLMProvider` + `OpenAIProvider` (GPT-4o-mini default) + `LocalProvider` (calls text-completion-llm-service) |
+| `ai_agent/llm_provider.py` | Abstract `LLMProvider` + `OpenAIProvider` (GPT-4o-mini default) + `OpenRouterProvider` (200+ models, free tier) + `LocalProvider` (calls text-completion-llm-service) |
 | `ai_agent/pipeline_agent.py` | `PipelineAgent`: builds system prompt from `service_registry.json`, calls LLM to generate YAML, validates structure + services + params + dependencies. Standalone `validate_pipeline()` module-level function enables validation-only use without instantiating the agent (e.g., Streamlit UI). |
 | `ai_agent/pipeline_compiler.py` | `PipelineCompiler`: executes validated pipeline definitions via Preparator SDK with **parallel execution** of independent steps (topological layering via Kahn’s algorithm + `ThreadPoolExecutor`). Uses a **dispatch registry** (`_build_dispatch_registry()`) for extensibility—add new services via `register_service()` without if/elif chains. Returns `PipelineResult` with per-step metrics + `correlation_id`. Supports `join_datasets` (2 `depends_on` entries). Exposes `last_step_outputs` dict for UI data preview. |
 | `schemas/service_registry.json` | Complete metadata for all 11 services: name, type, description, endpoint, input/output formats, params with types/required/defaults/enums |
@@ -368,6 +368,7 @@ pipeline:
 ### LLM Provider Configuration
 
 - `LLM_PROVIDER=openai` → uses OpenAI API (requires `OPENAI_API_KEY`)
+- `LLM_PROVIDER=openrouter` → uses OpenRouter API gateway (requires `OPENROUTER_API_KEY`). Supports 200+ models including free ones (e.g., `meta-llama/llama-3.1-8b-instruct:free`). OpenAI-compatible API via `openai` Python package with custom `base_url`. Get a free key at https://openrouter.ai/keys.
 - `LLM_PROVIDER=local` → uses the local HuggingFace text-completion-llm-service
 - Factory: `create_llm_provider(provider=None)` reads env var if not specified
 
@@ -443,7 +444,7 @@ Single bridge network `etl-network`. Services reference each other by container 
 | Volume | Mount | Purpose |
 |---|---|---|
 | `etl-containers-shared-data` | `/app/data` | Shared datasets, metadata, XCom files |
-| `etl-data-airflow` | `/opt/airflow` | Airflow persistence |
+| `etl-airflow-data` | `/opt/airflow` | Airflow persistence |
 | `etl-postgres-data` | PostgreSQL data dir | Airflow metadata DB |
 | `etl-grafana-data` | Grafana data dir | Dashboards |
 | `etl-prometheus-data` | Prometheus data dir | TSDB |
@@ -459,9 +460,11 @@ Single bridge network `etl-network`. Services reference each other by container 
 | `ETL_DATA_ROOT` | `/app/data` | Base directory for datasets/metadata path resolution |
 | `ALLOW_PRIVATE_API_URLS` | `false` | Allow private/local API targets in `extract-api` |
 | `HF_MODELS_PATH` | `./hf_models` | Local HuggingFace model cache |
-| `LLM_PROVIDER` | `openai` | AI agent provider (`openai` or `local`) |
+| `LLM_PROVIDER` | `openai` | AI agent provider (`openai`, `openrouter`, or `local`) |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key (free at https://openrouter.ai/keys) |
+| `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct:free` | OpenRouter model identifier |
 
 ---
 

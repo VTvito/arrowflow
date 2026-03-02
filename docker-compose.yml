@@ -33,7 +33,7 @@ services:
         condition: service_started
     volumes:
       - etl-containers-shared-data:/app/data         # Shared Volume between containers for data
-      - etl-data-airflow:/opt/airflow                # Volume for persistence of Airflow data
+      - etl-airflow-data:/opt/airflow                # Volume for persistence of Airflow data
       - ./airflow/dags:/opt/airflow/dags             # Mount the local folder 'dags' in the container
       - ./preparator:/opt/airflow/preparator         # Mount the local folder 'preparator' in the container
     ports:
@@ -280,6 +280,8 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free}
     volumes:
       - etl-containers-shared-data:/app/data
     ports:
@@ -300,6 +302,6 @@ networks:
 volumes:
   etl-containers-shared-data:
   etl-postgres-data:
-  etl-data-airflow:
+  etl-airflow-data:
   etl-grafana-data:
   etl-prometheus-data:

@@ -80,14 +80,43 @@ def render_sidebar():
         # LLM Provider selector
         provider = st.selectbox(
             "LLM Provider",
-            ["openai", "local"],
-            help="OpenAI requires OPENAI_API_KEY env var. Local uses the HuggingFace service.",
+            ["openai", "openrouter", "local"],
+            help=(
+                "**OpenAI**: requires OPENAI_API_KEY (paid).  \n"
+                "**OpenRouter**: gateway to 200+ models, including free ones — "
+                "get a key at https://openrouter.ai/keys.  \n"
+                "**Local**: uses the HuggingFace text-completion-llm-service (requires model download)."
+            ),
         )
 
         if provider == "openai":
             api_key = st.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
             if api_key:
                 os.environ["OPENAI_API_KEY"] = api_key
+
+        elif provider == "openrouter":
+            or_key = st.text_input(
+                "OpenRouter API Key", type="password",
+                value=os.getenv("OPENROUTER_API_KEY", ""),
+                help="Free key at https://openrouter.ai/keys",
+            )
+            if or_key:
+                os.environ["OPENROUTER_API_KEY"] = or_key
+
+            or_model = st.selectbox(
+                "Model",
+                [
+                    "meta-llama/llama-3.1-8b-instruct:free",
+                    "google/gemma-2-9b-it:free",
+                    "mistralai/mistral-7b-instruct:free",
+                    "qwen/qwen-2.5-7b-instruct:free",
+                    "meta-llama/llama-3.3-70b-instruct",
+                    "anthropic/claude-3.5-sonnet",
+                    "openai/gpt-4o-mini",
+                ],
+                help="Models ending in `:free` require no credits.",
+            )
+            os.environ["OPENROUTER_MODEL"] = or_model
 
         st.divider()
 

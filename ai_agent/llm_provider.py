@@ -1,9 +1,10 @@
 """
 LLM Provider Abstraction Layer.
 
-Supports two backends:
+Supports three backends:
   1. OpenAI API (GPT-4o / configurable model)
-  2. Local HuggingFace model via the existing text-completion-llm-service
+  2. OpenRouter API gateway (200+ models, including free ones — https://openrouter.ai)
+  3. Local HuggingFace model via the existing text-completion-llm-service
 
 Usage:
     provider = create_llm_provider()  # reads LLM_PROVIDER env var
@@ -65,6 +66,66 @@ class OpenAIProvider(LLMProvider):
 
     def name(self) -> str:
         return f"OpenAI ({self.model})"
+
+
+class OpenRouterProvider(LLMProvider):
+    """OpenRouter API provider — OpenAI-compatible gateway to 200+ models (including free ones).
+
+    OpenRouter (https://openrouter.ai) aggregates LLMs from multiple providers
+    behind a single API key.  It exposes an OpenAI-compatible ``/chat/completions``
+    endpoint, so we reuse the ``openai`` Python package with a custom ``base_url``.
+
+    Free models (no credit required):
+        - meta-llama/llama-3.1-8b-instruct:free
+        - google/gemma-2-9b-it:free
+        - mistralai/mistral-7b-instruct:free
+        - qwen/qwen-2.5-7b-instruct:free
+
+    Set OPENROUTER_API_KEY in your environment (get one at https://openrouter.ai/keys).
+    """
+
+    OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+    def __init__(self, model: str = None, api_key: str = None):
+        try:
+            import openai
+        except ImportError:
+            raise ImportError("openai package not installed. Run: pip install openai")
+
+        self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+        api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY environment variable is required for OpenRouter provider. "
+                "Get a free key at https://openrouter.ai/keys"
+            )
+
+        self.client = openai.OpenAI(
+            api_key=api_key,
+            base_url=self.OPENROUTER_BASE_URL,
+            default_headers={
+                "HTTP-Referer": "https://github.com/VTvito/arrowflow",
+                "X-Title": "ArrowFlow ETL Platform",
+            },
+        )
+        logger.info(f"OpenRouter provider initialized with model: {self.model}")
+
+    def generate(self, prompt: str, system_prompt: str = "", temperature: float = 0.3, max_tokens: int = 2048) -> str:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content
+
+    def name(self) -> str:
+        return f"OpenRouter ({self.model})"
 
 
 class LocalProvider(LLMProvider):
@@ -135,14 +196,17 @@ def create_llm_provider(provider: str = None, **kwargs) -> LLMProvider:
     Factory function to create an LLM provider.
 
     Args:
-        provider: "openai" or "local". Defaults to LLM_PROVIDER env var, then "openai".
+        provider: "openai", "openrouter", or "local".
+                  Defaults to LLM_PROVIDER env var, then "openai".
         **kwargs: Additional arguments passed to the provider constructor.
     """
     provider = provider or os.getenv("LLM_PROVIDER", "openai")
 
     if provider == "openai":
         return OpenAIProvider(**kwargs)
+    elif provider == "openrouter":
+        return OpenRouterProvider(**kwargs)
     elif provider == "local":
         return LocalProvider(**kwargs)
     else:
-        raise ValueError(f"Unknown LLM provider: '{provider}'. Supported: 'openai', 'local'")
+        raise ValueError(f"Unknown LLM provider: '{provider}'. Supported: 'openai', 'openrouter', 'local'")

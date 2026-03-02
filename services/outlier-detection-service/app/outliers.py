@@ -40,7 +40,9 @@ def detect_and_remove_outliers(arrow_table, column, z_threshold=3.0):
         return pa.Table.from_pandas(df), 0
 
     z_score = (series_numeric - mean_val).abs() / std_val
-    filtered_df = df[z_score <= z_threshold]
+    # Keep rows where z_score is NaN to avoid dropping non-numeric rows silently
+    keep_mask = (z_score <= z_threshold) | z_score.isna()
+    filtered_df = df[keep_mask]
     removed_count = before_rows - filtered_df.shape[0]
 
     new_table = pa.Table.from_pandas(filtered_df)

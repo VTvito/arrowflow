@@ -189,6 +189,9 @@ def _build_dispatch_registry(prep) -> dict[str, Callable]:
     }
 
 
+_EXTRACT_SERVICES = {"extract_csv", "extract_excel", "extract_api", "extract_sql"}
+
+
 # ── Pipeline Compiler ──────────────────────────────────────────────
 
 class PipelineCompiler:
@@ -415,6 +418,12 @@ class PipelineCompiler:
             raise ValueError(
                 "join_datasets requires exactly 2 depends_on entries "
                 "(one for each input dataset)"
+            )
+
+        if service not in _EXTRACT_SERVICES and input_data is None:
+            raise ValueError(
+                f"Service '{service}' requires input data. "
+                "Check depends_on and upstream outputs."
             )
 
         return handler(params, input_data, dataset_name, input_data_2)

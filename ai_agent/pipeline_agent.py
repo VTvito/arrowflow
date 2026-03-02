@@ -128,6 +128,11 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
     for i, step in enumerate(pipeline["steps"]):
         step_id = step.get("id", f"step_{i}")
 
+        params = step.get("params") or {}
+        if not isinstance(params, dict):
+            errors.append(f"Step '{step_id}': 'params' must be an object/dict")
+            params = {}
+
         if step_id in step_ids:
             errors.append(f"Duplicate step ID: '{step_id}'")
         step_ids.add(step_id)
@@ -150,15 +155,34 @@ def validate_pipeline(pipeline_def: dict, registry: dict) -> tuple[list[str], li
             for pname, pinfo in svc_info.get("params", {}).items():
                 if pname == "dataset_name":
                     continue  # auto-injected by the compiler
-                if pinfo.get("required") and pname not in step.get("params", {}):
+                if pinfo.get("required") and pname not in params:
                     errors.append(
                         f"Step '{step_id}': missing required param '{pname}' for service '{service}'"
                     )
 
+        # Validate depends_on references and semantics
+        depends_on = step.get("depends_on", [])
+        if depends_on is None:
+            depends_on = []
+        if not isinstance(depends_on, list):
+            errors.append(f"Step '{step_id}': 'depends_on' must be a list")
+            depends_on = []
+
         # Validate depends_on references
-        for dep in step.get("depends_on", []):
+        for dep in depends_on:
             if dep not in all_step_ids:
                 errors.append(f"Step '{step_id}': depends_on references unknown step '{dep}'")
+
+        if service in valid_services:
+            svc_type = registry["services"][service]["type"]
+            if svc_type == "extract" and depends_on:
+                errors.append(f"Step '{step_id}': extract steps must not have depends_on")
+            if svc_type != "extract" and not depends_on:
+                errors.append(f"Step '{step_id}': non-extract steps require depends_on")
+            if service == "join_datasets" and len(depends_on) != 2:
+                errors.append(f"Step '{step_id}': join_datasets requires exactly 2 depends_on entries")
+            if service != "join_datasets" and len(depends_on) > 1:
+                errors.append(f"Step '{step_id}': only join_datasets supports multiple depends_on entries")
 
     if not has_extract:
         errors.append("Pipeline must have at least one extract step")

@@ -6,6 +6,7 @@ FROM apache/airflow:2.10.4
 ENV AIRFLOW__METRICS__STATSD_ON=True
 ENV AIRFLOW__METRICS__STATSD_HOST=statsd-exporter
 ENV AIRFLOW__METRICS__STATSD_PORT=9125
+ENV PYTHONWARNINGS="ignore:invalid escape sequence.*:SyntaxWarning:azure\\.synapse\\.artifacts\\.models\\._models_py3"
 
 # Crea le cartelle necessarie
 RUN mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins

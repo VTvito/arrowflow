@@ -102,6 +102,9 @@ def basic_quality_checks(arrow_table, rules=None):
     if range_rules:
         range_results = {}
         for col, bounds in range_rules.items():
+            if not isinstance(bounds, dict):
+                range_results[col] = {"pass": False, "reason": "invalid bounds"}
+                continue
             if col not in df.columns:
                 range_results[col] = {"pass": False, "reason": "column not found"}
                 continue
@@ -111,15 +114,22 @@ def basic_quality_checks(arrow_table, rules=None):
             col_min = float(df[col].min()) if df[col].notna().any() else None
             col_max = float(df[col].max()) if df[col].notna().any() else None
             ok = True
-            if "min" in bounds and col_min is not None:
-                ok = ok and col_min >= bounds["min"]
-            if "max" in bounds and col_max is not None:
-                ok = ok and col_max <= bounds["max"]
+            try:
+                expected_min = float(bounds["min"]) if "min" in bounds else None
+                expected_max = float(bounds["max"]) if "max" in bounds else None
+            except (TypeError, ValueError):
+                range_results[col] = {"pass": False, "reason": "invalid bounds"}
+                continue
+
+            if expected_min is not None and col_min is not None:
+                ok = ok and col_min >= expected_min
+            if expected_max is not None and col_max is not None:
+                ok = ok and col_max <= expected_max
             range_results[col] = {
                 "actual_min": col_min,
                 "actual_max": col_max,
-                "expected_min": bounds.get("min"),
-                "expected_max": bounds.get("max"),
+                "expected_min": expected_min,
+                "expected_max": expected_max,
                 "pass": bool(ok)
             }
         result["checks"]["value_range"] = range_results

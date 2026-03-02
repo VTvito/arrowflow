@@ -42,6 +42,14 @@ MINIMAL_REGISTRY = {
                 "dataset_name": {"type": "string", "required": True, "description": "Dataset name"},
             },
         },
+        "join_datasets": {
+            "type": "transform",
+            "params": {
+                "dataset_name": {"type": "string", "required": True, "description": "Dataset name"},
+                "join_key": {"type": "string", "required": False},
+                "join_type": {"type": "string", "required": False},
+            },
+        },
     }
 }
 
@@ -170,6 +178,62 @@ class TestInvalidPipelines:
         ])
         errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
         assert any("service" in e.lower() for e in errors)
+
+    def test_non_extract_requires_depends_on(self):
+        pipeline = _pipeline([
+            {"id": "extract", "service": "extract_csv", "params": {"file_path": "/data/f.csv"}},
+            {"id": "clean", "service": "clean_nan"},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("requires depends_on" in e.lower() for e in errors)
+
+    def test_extract_cannot_have_depends_on(self):
+        pipeline = _pipeline([
+            {"id": "extract", "service": "extract_csv", "params": {"file_path": "/data/f.csv"}, "depends_on": ["x"]},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("must not have depends_on" in e.lower() for e in errors)
+
+    def test_params_must_be_dict(self):
+        pipeline = _pipeline([
+            {"id": "extract", "service": "extract_csv", "params": []},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("params" in e.lower() and "dict" in e.lower() for e in errors)
+
+    def test_depends_on_must_be_list(self):
+        pipeline = _pipeline([
+            {"id": "extract", "service": "extract_csv", "params": {"file_path": "/data/f.csv"}},
+            {"id": "clean", "service": "clean_nan", "depends_on": "extract"},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("depends_on" in e.lower() and "list" in e.lower() for e in errors)
+
+    def test_non_join_multiple_depends_on_invalid(self):
+        pipeline = _pipeline([
+            {"id": "extract1", "service": "extract_csv", "params": {"file_path": "/data/a.csv"}},
+            {"id": "extract2", "service": "extract_csv", "params": {"file_path": "/data/b.csv"}},
+            {"id": "clean", "service": "clean_nan", "depends_on": ["extract1", "extract2"]},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("multiple depends_on" in e.lower() for e in errors)
+
+    def test_join_requires_two_depends_on(self):
+        pipeline = _pipeline([
+            {"id": "extract1", "service": "extract_csv", "params": {"file_path": "/data/a.csv"}},
+            {"id": "join", "service": "join_datasets", "depends_on": ["extract1"]},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert any("join_datasets" in e.lower() and "exactly 2" in e.lower() for e in errors)
+
+    def test_join_accepts_two_depends_on(self):
+        pipeline = _pipeline([
+            {"id": "extract1", "service": "extract_csv", "params": {"file_path": "/data/a.csv"}},
+            {"id": "extract2", "service": "extract_csv", "params": {"file_path": "/data/b.csv"}},
+            {"id": "join", "service": "join_datasets", "depends_on": ["extract1", "extract2"]},
+        ])
+        errors, warnings = validate_pipeline(pipeline, MINIMAL_REGISTRY)
+        assert errors == []
 
 
 # ── Return type contract ──────────────────────────────────────────────────────

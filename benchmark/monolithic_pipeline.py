@@ -55,11 +55,13 @@ def run_monolithic_pipeline(
 
     # ── Step 2: Data Quality Check ──
     t0 = time.time()
-    assert len(df) >= 10, f"Dataset has only {len(df)} rows (min: 10)"
+    if len(df) < 10:
+        raise ValueError(f"Dataset has only {len(df)} rows (min: 10)")
     total_cells = df.shape[0] * df.shape[1]
     total_nulls = df.isnull().sum().sum()
     null_ratio = total_nulls / total_cells if total_cells > 0 else 0
-    assert null_ratio <= null_threshold, f"Null ratio {null_ratio:.3f} exceeds threshold {null_threshold}"
+    if null_ratio > null_threshold:
+        raise ValueError(f"Null ratio {null_ratio:.3f} exceeds threshold {null_threshold}")
     results["quality_check"] = {
         "duration_sec": time.time() - t0,
         "null_ratio": float(null_ratio),

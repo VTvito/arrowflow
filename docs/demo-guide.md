@@ -54,6 +54,11 @@ http://localhost:8501
 
 You'll see four tabs: **Pipeline Editor**, **Execution**, **Datasets**, **Services**.
 
+The **Execution** tab now includes:
+- **Platform Readiness** checks (Airflow, Streamlit, Prometheus, Grafana)
+- **Quick Airflow Triggers** (trigger core DAGs directly from Streamlit)
+- **Execution Insights** (slowest step, processed data, orchestration overhead)
+
 ### 2. Chat Tab — describe the pipeline in natural language
 
 In the chat panel, type something like:
@@ -73,6 +78,8 @@ The panel shows:
 
 Click **Execute**. You'll see steps complete sequentially (or in parallel if independent).
 When done, a table preview and saved file path in `/app/data/` appear.
+
+You can also use **Quick Airflow Triggers** in the same tab to launch DAGs directly via Airflow API.
 
 ---
 
@@ -233,8 +240,13 @@ to the shared volume at `/app/data/<dataset_name>/`.
 Open http://localhost:8501 → **Datasets** tab to:
 
 - **Output Files** — preview CSV, Parquet, JSON, or Excel files and download them directly
-- **Pipeline Runs** — view run history grouped by `correlation_id`, with per-step duration, row counts, and service details
+- **Pipeline Runs** — view run history grouped by `correlation_id`, with:
+    - run timeline (active processing vs queue/orchestration gap)
+    - compact run comparison (current vs previous successful run)
+    - per-step duration, row counts, and service details
 - **Raw Metadata** — inspect the JSON metadata files written by each service
+
+The dataset overview also includes a **Business KPI snapshot** from the latest output (for example: revenue/AOV for e-commerce, attrition rate for HR).
 
 Select any dataset from the sidebar dropdown to explore its contents.
 

@@ -518,6 +518,21 @@ Every service writes a JSON file to `/app/data/<dataset_name>/metadata/` after p
 These files are low-latency (written locally on shared volume) and allow
 reconstructing what happened at each step without depending on external systems.
 
+### Streamlit observability surface (operator UX)
+
+The Streamlit UI now exposes runtime diagnostics directly in the **Execution** and
+**Datasets** tabs to reduce context switching between Airflow, Grafana, and logs.
+
+- **Platform Readiness**: probes Airflow (`/health`), Streamlit, Prometheus, and Grafana
+- **Airflow scheduler heartbeat status**: explicit healthy/not-ready signal from Airflow health payload
+- **Execution insights**: successful steps, total processed KB, slowest step, orchestration overhead (%)
+- **Run timeline diagnostics**: active processing vs queue/orchestration gap per step
+- **Run comparison**: latest run vs previous successful run deltas for duration, final rows, and outliers removed
+
+This UX layer does not replace Prometheus/Grafana but gives immediate operator feedback
+for common questions like "is the platform ready?", "where is time spent?", and
+"did this run improve or regress vs the previous one?".
+
 ### Prometheus scraping
 
 ```

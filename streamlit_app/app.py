@@ -8,12 +8,13 @@ Run: streamlit run streamlit_app/app.py
 """
 
 import glob
+import hashlib
 import json
 import os
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -42,6 +43,11 @@ st.set_page_config(
 # ── Load configs ──
 SERVICES_CONFIG_PATH = os.path.join(PROJECT_ROOT, "preparator", "services_config.json")
 SERVICE_REGISTRY_PATH = os.path.join(PROJECT_ROOT, "schemas", "service_registry.json")
+AIRFLOW_BASE_URL = os.getenv("AIRFLOW_BASE_URL", "http://localhost:8080")
+AIRFLOW_USERNAME = os.getenv("AIRFLOW_USERNAME", "admin")
+AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
+_DEFAULT_AIRFLOW_USERNAME = "admin"
+_DEFAULT_AIRFLOW_ADMIN_SHA256 = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
 
 
 @st.cache_data
@@ -214,8 +220,134 @@ def render_pipeline_editor():
             st.info("Use the chat to generate a pipeline, or edit the YAML directly.")
 
 
+def _probe_http(url: str, timeout: int = 3):
+    start = time.time()
+    try:
+        resp = requests.get(url, timeout=timeout)
+        elapsed_ms = round((time.time() - start) * 1000)
+        return resp.status_code, elapsed_ms, None, resp
+    except requests.Timeout:
+        return None, None, "timeout", None
+    except requests.ConnectionError:
+        return None, None, "unreachable", None
+    except Exception as exc:
+        return None, None, str(exc), None
+
+
+def _airflow_quick_trigger(dag_id: str, conf: dict | None = None):
+    url = f"{AIRFLOW_BASE_URL}/api/v1/dags/{dag_id}/dagRuns"
+    payload = {"conf": conf or {}}
+    try:
+        resp = requests.post(
+            url,
+            json=payload,
+            auth=(AIRFLOW_USERNAME, AIRFLOW_PASSWORD),
+            timeout=10,
+        )
+    except Exception as exc:
+        return False, f"Request failed: {exc}"
+
+    if resp.status_code in (200, 201):
+        run_id = resp.json().get("dag_run_id", "(unknown)")
+        return True, f"Triggered `{dag_id}` with run_id `{run_id}`"
+
+    try:
+        details = resp.json()
+    except Exception:
+        details = resp.text[:300]
+    return False, f"Airflow API error (HTTP {resp.status_code}): {details}"
+
+
+def _render_platform_readiness():
+    st.subheader("🩺 Platform Readiness")
+
+    current_pwd_hash = hashlib.sha256(AIRFLOW_PASSWORD.encode("utf-8")).hexdigest()
+    if AIRFLOW_USERNAME == _DEFAULT_AIRFLOW_USERNAME and current_pwd_hash == _DEFAULT_AIRFLOW_ADMIN_SHA256:
+        st.warning(
+            "Airflow is using default admin credentials. Rotate credentials before sharing this environment."
+        )
+
+    endpoints = [
+        ("Airflow UI", f"{AIRFLOW_BASE_URL}/health"),
+        ("Streamlit", "http://localhost:8501"),
+        ("Prometheus", "http://localhost:9090/-/healthy"),
+        ("Grafana", "http://localhost:3000/api/health"),
+    ]
+
+    rows = []
+    for name, url in endpoints:
+        code, elapsed, err, _ = _probe_http(url)
+        if code == 200:
+            status = "🟢 Ready"
+        elif code is not None:
+            status = f"🟡 HTTP {code}"
+        elif err == "timeout":
+            status = "🟠 Timeout"
+        else:
+            status = "🔴 Unreachable"
+        rows.append({
+            "Component": name,
+            "Status": status,
+            "Latency": f"{elapsed}ms" if elapsed is not None else "-",
+            "URL": url,
+        })
+
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    airflow_health_url = f"{AIRFLOW_BASE_URL}/health"
+    code, _, err, resp = _probe_http(airflow_health_url)
+    if code == 200 and resp is not None:
+        try:
+            health = resp.json()
+            scheduler_ok = health.get("scheduler", {}).get("status") == "healthy"
+            if scheduler_ok:
+                st.success("Airflow scheduler heartbeat is healthy.")
+            else:
+                st.warning("Airflow is reachable but scheduler is not fully healthy yet.")
+        except Exception:
+            st.info("Airflow health endpoint returned a non-JSON response.")
+    elif err:
+        st.warning("Airflow health check is not ready yet.")
+
+
+def _render_airflow_quick_actions():
+    st.subheader("⚡ Quick Airflow Triggers")
+    dag_options = ["hr_analytics_pipeline", "ecommerce_pipeline", "weather_api_pipeline"]
+    dag_id = st.selectbox("Choose DAG", dag_options, key="quick_trigger_dag")
+
+    conf_text = st.text_area(
+        "Run conf (JSON, optional)",
+        value="{}",
+        height=90,
+        key="quick_trigger_conf",
+        help="Optional DAG run config passed to Airflow API.",
+    )
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("🚀 Trigger in Airflow", use_container_width=True):
+            try:
+                conf = json.loads(conf_text.strip()) if conf_text.strip() else {}
+                if not isinstance(conf, dict):
+                    st.error("Run conf must be a JSON object.")
+                else:
+                    ok, msg = _airflow_quick_trigger(dag_id, conf)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+            except json.JSONDecodeError as exc:
+                st.error(f"Invalid JSON in run conf: {exc}")
+    with c2:
+        st.link_button("🌐 Open Airflow", AIRFLOW_BASE_URL, use_container_width=True)
+
+
 def render_execution_panel():
     st.header("🚀 Execution")
+
+    _render_platform_readiness()
+    _render_airflow_quick_actions()
+    st.divider()
 
     col1, col2 = st.columns([1, 2])
 
@@ -237,6 +369,21 @@ def render_execution_panel():
     # Step results table
     if st.session_state.execution_result:
         result = st.session_state.execution_result
+
+        success_steps = sum(1 for s in result.steps if s.status == "success")
+        total_steps = len(result.steps)
+        total_kb = sum((s.data_size_bytes or 0) for s in result.steps) / 1024
+        active_sec = sum(float(s.duration_sec or 0) for s in result.steps)
+        overhead_sec = max(float(result.total_duration_sec or 0) - active_sec, 0.0)
+        overhead_pct = (overhead_sec / result.total_duration_sec * 100.0) if result.total_duration_sec else 0.0
+        slowest = max(result.steps, key=lambda s: s.duration_sec)
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Successful steps", f"{success_steps}/{total_steps}")
+        m2.metric("Total processed", f"{total_kb:.1f} KB")
+        m3.metric("Slowest step", slowest.step_id)
+        m4.metric("Slowest duration", f"{slowest.duration_sec:.2f}s")
+        m5.metric("Orchestration overhead", f"{overhead_pct:.1f}%")
+
         steps_data = []
         for s in result.steps:
             steps_data.append({
@@ -468,8 +615,8 @@ def _load_metadata_files(dataset_path):
         try:
             with open(fp) as f:
                 items.append(json.load(f))
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError):
+            continue
     return items
 
 
@@ -505,6 +652,155 @@ def _read_output_preview(filepath, max_rows=100):
     elif ext in (".xlsx", ".xls"):
         return pd.read_excel(filepath, nrows=max_rows)
     return None
+
+
+def _parse_ts(ts_value):
+    if not ts_value:
+        return None
+    try:
+        normalized = str(ts_value).replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _build_run_timeline(steps):
+    timeline = []
+    prev_end = None
+    for idx, s in enumerate(steps, start=1):
+        end_ts = _parse_ts(s.get("timestamp"))
+        duration_sec = float(s.get("duration_sec", 0) or 0)
+        start_ts = end_ts - timedelta(seconds=duration_sec) if end_ts is not None else None
+        queue_gap_sec = 0.0
+        if prev_end is not None and start_ts is not None:
+            queue_gap_sec = max((start_ts - prev_end).total_seconds(), 0.0)
+        if end_ts is not None:
+            prev_end = end_ts
+
+        timeline.append({
+            "#": idx,
+            "Step": s.get("service_name", "?"),
+            "Active (s)": round(duration_sec, 3),
+            "Queue/Gap (s)": round(queue_gap_sec, 3),
+            "Started": start_ts.strftime("%H:%M:%S") if start_ts else "-",
+            "Finished": end_ts.strftime("%H:%M:%S") if end_ts else "-",
+        })
+    return timeline
+
+
+def _derive_business_kpis(df):
+    kpis = []
+    cols = set(df.columns)
+
+    if "TotalAmount" in cols:
+        amount = pd.to_numeric(df["TotalAmount"], errors="coerce")
+        revenue = float(amount.fillna(0).sum())
+        orders = len(df)
+        aov = (revenue / orders) if orders else 0.0
+        kpis.extend([
+            ("Revenue", f"{revenue:,.2f}"),
+            ("Orders", f"{orders:,}"),
+            ("Avg Order Value", f"{aov:,.2f}"),
+        ])
+
+    if "Attrition" in cols:
+        attr = df["Attrition"].astype(str).str.strip().str.lower()
+        positive = attr.isin(["yes", "true", "1", "y"]).sum()
+        total = len(attr)
+        rate = (positive / total * 100.0) if total else 0.0
+        kpis.extend([
+            ("Employees", f"{total:,}"),
+            ("Attrition Cases", f"{int(positive):,}"),
+            ("Attrition Rate", f"{rate:.2f}%"),
+        ])
+
+    if "temperature" in {c.lower() for c in cols}:
+        temp_col = next(c for c in df.columns if c.lower() == "temperature")
+        temp = pd.to_numeric(df[temp_col], errors="coerce")
+        if temp.notna().any():
+            kpis.extend([
+                ("Avg Temperature", f"{float(temp.mean()):.1f}"),
+                ("Min Temperature", f"{float(temp.min()):.1f}"),
+                ("Max Temperature", f"{float(temp.max()):.1f}"),
+            ])
+
+    if not kpis:
+        total_cells = max(df.shape[0] * df.shape[1], 1)
+        null_ratio = float(df.isna().sum().sum()) / total_cells
+        kpis.extend([
+            ("Rows", f"{df.shape[0]:,}"),
+            ("Columns", f"{df.shape[1]:,}"),
+            ("Completeness", f"{(1.0 - null_ratio) * 100:.2f}%"),
+        ])
+
+    return kpis
+
+
+def _to_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_run_summary(cid, steps):
+    if not steps:
+        return {
+            "cid": cid,
+            "duration_s": 0.0,
+            "rows": None,
+            "outliers": 0,
+            "success": False,
+            "end_ts": None,
+        }
+
+    timeline_rows = _build_run_timeline(steps)
+    active_total = sum(r["Active (s)"] for r in timeline_rows)
+    gap_total = sum(r["Queue/Gap (s)"] for r in timeline_rows)
+    duration_s = active_total + gap_total
+
+    end_ts_candidates = [_parse_ts(s.get("timestamp")) for s in steps]
+    end_ts_candidates = [ts for ts in end_ts_candidates if ts is not None]
+    end_ts = max(end_ts_candidates) if end_ts_candidates else None
+
+    last_step = steps[-1]
+    rows = last_step.get("rows_out", last_step.get("rows_in"))
+    if rows is not None:
+        rows = _to_int(rows, default=0)
+
+    outliers = 0
+    for s in steps:
+        if "removed_outliers" in s:
+            outliers += _to_int(s.get("removed_outliers"), default=0)
+
+    success = any(
+        ("output_file" in s)
+        or ("load" in str(s.get("service_name", "")).lower())
+        for s in steps
+    )
+
+    return {
+        "cid": cid,
+        "duration_s": round(duration_s, 3),
+        "rows": rows,
+        "outliers": outliers,
+        "success": success,
+        "end_ts": end_ts,
+    }
+
+
+def _delta_text(current, baseline, suffix=""):
+    if current is None or baseline is None:
+        return "n/a"
+    diff = _to_float(current) - _to_float(baseline)
+    return f"{diff:+.2f}{suffix}"
 
 
 def _group_runs(metadata_items):
@@ -544,6 +840,25 @@ def render_dataset_explorer():
     # ── Output Files ──
     output_files = _list_output_files(ds_path)
     metadata_items = _load_metadata_files(ds_path)
+
+    # Business-friendly summary cards for the selected dataset.
+    latest_rows = metadata_items[0].get("rows_out", metadata_items[0].get("rows_in", "-")) if metadata_items else "-"
+    total_duration = sum(float(m.get("duration_sec", 0) or 0) for m in metadata_items)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Metadata events", len(metadata_items))
+    c2.metric("Output files", len(output_files))
+    c3.metric("Latest rows", latest_rows)
+    c4.metric("Accumulated duration", f"{total_duration:.2f}s")
+
+    if output_files:
+        latest_path = output_files[0]["path"]
+        latest_df = _read_output_preview(latest_path, max_rows=5000)
+        if latest_df is not None and not latest_df.empty:
+            st.caption("Business KPI snapshot from latest output")
+            kpis = _derive_business_kpis(latest_df)
+            cols = st.columns(min(len(kpis), 4))
+            for idx, (label, value) in enumerate(kpis[:4]):
+                cols[idx].metric(label, value)
 
     tab_out, tab_runs, tab_meta = st.tabs(["📄 Output Files", "🔄 Pipeline Runs", "🔍 Raw Metadata"])
 
@@ -602,15 +917,59 @@ def render_dataset_explorer():
             runs = _group_runs(metadata_items)
             st.caption(f"{len(runs)} pipeline run(s) detected")
 
+            run_summaries = []
+            for cid, steps in runs.items():
+                summary = _build_run_summary(cid, steps)
+                run_summaries.append(summary)
+            run_summaries.sort(key=lambda r: r["end_ts"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+            if run_summaries:
+                current = run_summaries[0]
+                baseline = next((r for r in run_summaries[1:] if r["success"]), None)
+                st.subheader("📈 Run Comparison")
+                if baseline is None:
+                    st.info("Need at least two successful runs to compare current vs baseline.")
+                else:
+                    st.caption(
+                        f"Current `{current['cid'][:8]}` vs previous successful `{baseline['cid'][:8]}`"
+                    )
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric(
+                        "Duration",
+                        f"{current['duration_s']:.2f}s",
+                        delta=_delta_text(current["duration_s"], baseline["duration_s"], "s"),
+                        delta_color="inverse",
+                    )
+                    c2.metric(
+                        "Final rows",
+                        "-" if current["rows"] is None else f"{current['rows']:,}",
+                        delta=_delta_text(current["rows"], baseline["rows"]),
+                    )
+                    c3.metric(
+                        "Outliers removed",
+                        f"{current['outliers']}",
+                        delta=_delta_text(current["outliers"], baseline["outliers"]),
+                        delta_color="inverse",
+                    )
+
             for run_idx, (cid, steps) in enumerate(runs.items()):
                 first_ts = steps[0].get("timestamp", "?")
-                last_svc = steps[-1].get("service_name", "?")
                 n_steps = len(steps)
                 total_dur = sum(s.get("duration_sec", 0) for s in steps)
 
                 header = f"Run {run_idx + 1} — {n_steps} steps · {total_dur:.2f}s · {first_ts}"
                 with st.expander(header, expanded=(run_idx == 0)):
                     st.caption(f"Correlation ID: `{cid}`")
+
+                    timeline_rows = _build_run_timeline(steps)
+                    active_total = sum(r["Active (s)"] for r in timeline_rows)
+                    gap_total = sum(r["Queue/Gap (s)"] for r in timeline_rows)
+                    wall_est = active_total + gap_total
+                    t1, t2, t3 = st.columns(3)
+                    t1.metric("Active processing", f"{active_total:.2f}s")
+                    t2.metric("Queue/orchestration gap", f"{gap_total:.2f}s")
+                    t3.metric("Estimated wall-time", f"{wall_est:.2f}s")
+                    st.dataframe(pd.DataFrame(timeline_rows), use_container_width=True, hide_index=True)
 
                     # Steps table
                     rows_data = []
@@ -623,7 +982,11 @@ def render_dataset_explorer():
                             extra = f"removed {s['removed_outliers']} outliers"
                         elif "dq_checks" in s:
                             checks = s["dq_checks"]
-                            passed = sum(1 for v in checks.values() if v is True or (isinstance(v, dict) and v.get("pass")))
+                            passed = sum(
+                                1
+                                for v in checks.values()
+                                if v is True or (isinstance(v, dict) and v.get("pass"))
+                            )
                             extra = f"{passed}/{len(checks)} checks passed"
                         elif "output_file" in s:
                             extra = Path(s["output_file"]).name

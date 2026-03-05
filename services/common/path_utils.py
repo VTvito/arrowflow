@@ -6,6 +6,16 @@ DATA_ROOT = os.getenv("ETL_DATA_ROOT", "/app/data")
 _DATASET_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
+def _shared_dir_mode():
+    raw_mode = os.getenv("ETL_SHARED_DIR_MODE", "775")
+    if raw_mode.startswith("0o"):
+        raw_mode = raw_mode[2:]
+    try:
+        return int(raw_mode, 8)
+    except ValueError:
+        return 0o775
+
+
 def sanitize_dataset_name(dataset_name):
     if not isinstance(dataset_name, str):
         raise ValueError("Parameter 'dataset_name' must be a string")
@@ -35,11 +45,11 @@ def ensure_dataset_dirs(dataset_name):
     dataset_folder = resolved_dataset_folder
     metadata_dir = os.path.join(dataset_folder, "metadata")
     os.makedirs(metadata_dir, exist_ok=True)
-    # Ensure directories are world-writable so all containers (services run as
-    # root, Airflow runs as uid 50000) can read/write to the same shared volume.
+    # Keep write access configurable; default to least-privilege group writable.
+    mode = _shared_dir_mode()
     try:
-        os.chmod(dataset_folder, 0o777)
-        os.chmod(metadata_dir, 0o777)
+        os.chmod(dataset_folder, mode)
+        os.chmod(metadata_dir, mode)
     except OSError:
         pass  # best-effort; may fail on read-only mounts
     return dataset_folder, metadata_dir

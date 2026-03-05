@@ -17,7 +17,7 @@
 - **Natural Language Pipelines** &mdash; Describe what you need in plain text; the AI agent generates and executes a validated YAML pipeline
 - **11 Composable Services** &mdash; Extract (CSV, SQL, API, Excel), Transform (clean, filter, join, quality checks, outlier detection, LLM), Load (CSV, Excel, JSON, Parquet)
 - **High-Performance Data Transfer** &mdash; Apache Arrow IPC binary format between all services (zero-copy, no CSV/JSON parsing overhead)
-- **Visual Pipeline Builder** &mdash; Streamlit UI with YAML editor, real-time execution monitor, dataset explorer (browse outputs, preview, download), and service catalog
+- **Visual Pipeline Builder** &mdash; Streamlit UI with YAML editor, platform readiness checks, one-click Airflow triggers, real-time execution monitor, dataset explorer (browse outputs, preview, download), and service catalog
 - **Airflow Orchestration** &mdash; Production-ready DAGs with file-based XCom for large datasets
 - **Full Observability** &mdash; Prometheus metrics + Grafana dashboards + structured JSON logging + correlation ID tracing
 - **Extensible** &mdash; Add a new service in minutes using the included scaffold template and step-by-step guide
@@ -64,7 +64,16 @@ Trigger one of the pre-built DAGs from the Airflow UI:
 
 Or paste a YAML from [`examples/pipelines/`](examples/pipelines/) into the Streamlit YAML Editor.
 
-After execution, switch to the **Datasets** tab to browse output files, preview data, and download results.
+After execution, switch to the **Datasets** tab to browse output files, preview data, download results, and compare the latest run against the previous successful run.
+
+### New in Streamlit UX
+
+- **Platform Readiness** panel in Execution tab: live checks for Airflow, Streamlit, Prometheus, Grafana, including Airflow scheduler heartbeat status
+- **Quick Airflow Triggers** in Execution tab: trigger `hr_analytics_pipeline`, `ecommerce_pipeline`, or `weather_api_pipeline` without leaving Streamlit
+- **Execution insights**: successful steps, processed data volume, slowest step, and orchestration overhead (%)
+- **Run diagnostics** in Datasets tab: per-run active processing vs queue/orchestration gap timeline
+- **Run Comparison** in Datasets tab: current run vs previous successful run deltas for duration, final rows, and removed outliers
+- **Business KPI snapshot** from latest output file (domain-aware: HR, e-commerce, weather, or generic completeness)
 
 ---
 
@@ -215,7 +224,7 @@ Results including PNG charts and an interactive Plotly report are saved to `benc
 ### Testing
 
 ```bash
-make test              # Run all 208 tests (unit + integration)
+make test              # Run all tests (unit + integration)
 make test-coverage     # With coverage report
 make lint              # Ruff linter
 ```

@@ -4,6 +4,7 @@ import pandas as pd
 import pyarrow as pa
 from common.path_utils import resolve_input_path
 
+
 def process_excel(file_path):
     """
     Load Excel into DataFrame and return Arrow Table.

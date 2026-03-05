@@ -18,6 +18,16 @@ logger = logging.getLogger("xcom_file_utils")
 SHARED_DATA_ROOT = "/app/data"
 
 
+def _shared_dir_mode() -> int:
+    raw_mode = os.getenv("ETL_SHARED_DIR_MODE", "775")
+    if raw_mode.startswith("0o"):
+        raw_mode = raw_mode[2:]
+    try:
+        return int(raw_mode, 8)
+    except ValueError:
+        return 0o775
+
+
 def save_ipc_to_shared(ipc_data: bytes, dataset_name: str, step_name: str) -> str:
     """
     Save Arrow IPC data to the shared volume.
@@ -32,10 +42,11 @@ def save_ipc_to_shared(ipc_data: bytes, dataset_name: str, step_name: str) -> st
     """
     xcom_dir = os.path.join(SHARED_DATA_ROOT, dataset_name, "xcom")
     os.makedirs(xcom_dir, exist_ok=True)
-    # Ensure the dataset dir and xcom dir are writable by all containers
+    # Keep write access configurable; default to least-privilege group writable.
+    mode = _shared_dir_mode()
     try:
-        os.chmod(os.path.join(SHARED_DATA_ROOT, dataset_name), 0o777)
-        os.chmod(xcom_dir, 0o777)
+        os.chmod(os.path.join(SHARED_DATA_ROOT, dataset_name), mode)
+        os.chmod(xcom_dir, mode)
     except OSError:
         pass
 

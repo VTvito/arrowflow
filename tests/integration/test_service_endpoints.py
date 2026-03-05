@@ -6,7 +6,6 @@ Uses Flask test client — no Docker or network needed.
 import json
 import os
 import sys
-import tempfile
 
 import pytest
 from prometheus_client import REGISTRY

@@ -61,6 +61,11 @@ cp .env.example .env
 | `LLM_PROVIDER` | `openai` | AI provider: `openai` or `local` |
 | `OPENAI_API_KEY` | *(empty)* | OpenAI API key — required if `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model to use |
+| `AIRFLOW_BASE_URL` | `http://localhost:8080` | Streamlit quick-trigger target Airflow URL (optional override) |
+| `AIRFLOW_USERNAME` | `admin` | Streamlit quick-trigger Airflow username (optional override) |
+| `AIRFLOW_PASSWORD` | `admin` | Streamlit quick-trigger Airflow password (optional override) |
+
+> The Streamlit UI shows a warning when Airflow still uses default credentials.
 
 ---
 

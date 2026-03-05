@@ -11,6 +11,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from collections import defaultdict
@@ -76,10 +77,83 @@ def init_session_state():
         "execution_result": None,
         "execution_log": [],
         "step_previews": {},  # step_id -> Arrow IPC bytes for data preview
+        "active_view": "📝 Pipeline Editor",
+        "pending_execute": False,
+        "wiz_data_path": "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+
+
+def _is_running_in_container() -> bool:
+    return os.path.exists("/.dockerenv")
+
+
+def _airflow_runtime_base_url() -> str:
+    """URL used by Streamlit container to call Airflow API/health."""
+    if _is_running_in_container():
+        return os.getenv("AIRFLOW_INTERNAL_BASE_URL", "http://airflow:8080")
+    return AIRFLOW_BASE_URL
+
+
+def _platform_probe_endpoints() -> list[tuple[str, str]]:
+    """Return readiness endpoints based on host vs container runtime."""
+    if _is_running_in_container():
+        return [
+            ("Airflow UI", f"{_airflow_runtime_base_url()}/health"),
+            ("Streamlit", "http://localhost:8501"),
+            ("Prometheus", "http://prometheus:9090/-/healthy"),
+            ("Grafana", "http://grafana:3000/api/health"),
+        ]
+    return [
+        ("Airflow UI", f"{AIRFLOW_BASE_URL}/health"),
+        ("Streamlit", "http://localhost:8501"),
+        ("Prometheus", "http://localhost:9090/-/healthy"),
+        ("Grafana", "http://localhost:3000/api/health"),
+    ]
+
+
+def _reset_workspace_state(clear_openrouter_probe: bool = False):
+    """Reset chat, generated pipeline, and execution artifacts in one action."""
+    st.session_state.messages = []
+    st.session_state.pipeline_yaml = None
+    st.session_state.pipeline_def = None
+    st.session_state.nl_request = ""
+    st.session_state.generation_error = None
+    st.session_state.execution_result = None
+    st.session_state.execution_log = []
+    st.session_state.step_previews = {}
+    st.session_state.pending_execute = False
+    st.session_state.active_view = "📝 Pipeline Editor"
+    st.session_state.wiz_data_path = ""
+    if clear_openrouter_probe:
+        st.session_state.openrouter_last_probe = None
+
+
+def _queue_execution_and_open_panel():
+    st.session_state.pending_execute = True
+    st.session_state.active_view = "🚀 Execution"
+    st.rerun()
+
+
+def _save_uploaded_dataset(uploaded_file, suggested_name: str) -> tuple[str, str, str]:
+    """Save uploaded file on shared volume and return dataset name + host/container paths."""
+    # Keep dataset names filesystem-safe and URL-safe.
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", (suggested_name or "uploaded_dataset").strip())
+    safe_name = safe_name.strip("_") or "uploaded_dataset"
+
+    dataset_root = os.path.join(DATA_ROOT, safe_name)
+    raw_dir = os.path.join(dataset_root, "raw")
+    os.makedirs(raw_dir, exist_ok=True)
+
+    file_name = Path(uploaded_file.name).name
+    out_path = os.path.join(raw_dir, file_name)
+    with open(out_path, "wb") as out_fp:
+        out_fp.write(uploaded_file.getbuffer())
+
+    container_path = f"/app/data/{safe_name}/raw/{file_name}"
+    return safe_name, out_path, container_path
 
 
 # ── Sidebar: Chat Interface ──
@@ -172,7 +246,9 @@ def render_sidebar():
                 os.environ["LOCAL_LLM_URL"] = local_url
 
         st.divider()
-        st.caption("Generation prompt is now in the main *Pipeline Editor* tab for a wider writing area.")
+        if st.button("🧹 Reset All", use_container_width=True):
+            _reset_workspace_state(clear_openrouter_probe=True)
+            st.rerun()
     return provider
 
 
@@ -202,6 +278,42 @@ def _generate_pipeline_from_text(user_input: str, provider: str):
 def render_pipeline_editor(provider: str):
     st.header("📝 Pipeline Definition")
 
+    with st.expander("📥 Guided Dataset Upload (HR-friendly)", expanded=False):
+        st.caption("Upload a file first, then generate pipeline from plain language.")
+        up_file = st.file_uploader(
+            "Upload dataset",
+            type=["csv", "xlsx", "xls", "json", "parquet"],
+            key="guided_upload_file",
+        )
+        upload_name = st.text_input(
+            "Dataset name",
+            value="hr_upload",
+            help="Used as pipeline name and output folder under /app/data/<dataset_name>/",
+            key="guided_upload_dataset_name",
+        )
+        u1, u2 = st.columns([1, 1])
+        with u1:
+            if st.button("💾 Save Upload & Prepare Prompt", use_container_width=True):
+                if up_file is None:
+                    st.warning("Upload a dataset file first.")
+                else:
+                    ds_name, _, container_path = _save_uploaded_dataset(up_file, upload_name)
+                    st.session_state.nl_request = (
+                        f"Crea una pipeline chiamata {ds_name} che: "
+                        f"1) estrae dati da {container_path}, "
+                        "2) esegue controlli qualità (min_rows 10, check_null_ratio true), "
+                        "3) pulisce NaN con fill_median, "
+                        "4) salva in formato parquet"
+                    )
+                    st.success(
+                        f"Dataset salvato. Prompt precompilato pronto ({container_path}). "
+                        "Ora premi Generate Pipeline."
+                    )
+        with u2:
+            if st.button("🧹 Reset Workspace", use_container_width=True):
+                _reset_workspace_state(clear_openrouter_probe=False)
+                st.rerun()
+
     st.subheader("💡 Generate From Natural Language")
     input_mode = st.radio("Input mode", ["Guided", "Chat-style"], horizontal=True)
 
@@ -221,6 +333,14 @@ def render_pipeline_editor(provider: str):
                 name = pipeline_def["pipeline"]["name"]
                 steps = len(pipeline_def["pipeline"]["steps"])
                 st.success(f"Pipeline '{name}' generated successfully ({steps} steps).")
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    if st.button("⚡ Execute Now", use_container_width=True, key="chat_execute_now"):
+                        _queue_execution_and_open_panel()
+                with c2:
+                    if st.button("👀 Open Execution", use_container_width=True, key="chat_open_execution"):
+                        st.session_state.active_view = "🚀 Execution"
+                        st.rerun()
                 st.rerun()
             except Exception as e:
                 st.session_state.generation_error = str(e)
@@ -268,6 +388,37 @@ def render_pipeline_editor(provider: str):
             )
 
     st.divider()
+
+    a1, a2, a3 = st.columns([1, 1, 1])
+    with a1:
+        if st.button("👀 Open Execution", use_container_width=True):
+            st.session_state.active_view = "🚀 Execution"
+            st.rerun()
+    with a2:
+        if st.button(
+            "⚡ Validate + Execute",
+            use_container_width=True,
+            disabled=st.session_state.pipeline_yaml is None and st.session_state.pipeline_def is None,
+        ):
+            try:
+                source_yaml = st.session_state.pipeline_yaml or _default_pipeline_yaml()
+                pipeline_def = yaml.safe_load(source_yaml)
+                errors, warnings = validate_pipeline(pipeline_def, load_service_registry())
+                if errors:
+                    for err in errors:
+                        st.error(f"❌ {err}")
+                else:
+                    st.session_state.pipeline_def = pipeline_def
+                    st.session_state.pipeline_yaml = yaml.dump(pipeline_def, default_flow_style=False, sort_keys=False)
+                    for w in warnings:
+                        st.warning(f"⚠️ {w}")
+                    _queue_execution_and_open_panel()
+            except yaml.YAMLError as e:
+                st.error(f"Invalid YAML syntax: {e}")
+    with a3:
+        if st.button("🧹 Reset All", use_container_width=True):
+            _reset_workspace_state(clear_openrouter_probe=False)
+            st.rerun()
 
     col1, col2 = st.columns([1, 1])
 
@@ -380,7 +531,8 @@ def _probe_openrouter_model(api_key: str, model: str, timeout: int = 20) -> tupl
 
 
 def _airflow_quick_trigger(dag_id: str, conf: Optional[dict] = None):
-    url = f"{AIRFLOW_BASE_URL}/api/v1/dags/{dag_id}/dagRuns"
+    airflow_url = _airflow_runtime_base_url()
+    url = f"{airflow_url}/api/v1/dags/{dag_id}/dagRuns"
     payload = {"conf": conf or {}}
     try:
         resp = requests.post(
@@ -412,12 +564,9 @@ def _render_platform_readiness():
             "Airflow is using default admin credentials. Rotate credentials before sharing this environment."
         )
 
-    endpoints = [
-        ("Airflow UI", f"{AIRFLOW_BASE_URL}/health"),
-        ("Streamlit", "http://localhost:8501"),
-        ("Prometheus", "http://localhost:9090/-/healthy"),
-        ("Grafana", "http://localhost:3000/api/health"),
-    ]
+    endpoints = _platform_probe_endpoints()
+    if _is_running_in_container():
+        st.caption("Health checks are performed from container network endpoints (airflow/prometheus/grafana DNS).")
 
     rows = []
     for name, url in endpoints:
@@ -439,7 +588,7 @@ def _render_platform_readiness():
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    airflow_health_url = f"{AIRFLOW_BASE_URL}/health"
+    airflow_health_url = f"{_airflow_runtime_base_url()}/health"
     code, _, err, resp = _probe_http(airflow_health_url)
     if code == 200 and resp is not None:
         try:
@@ -489,6 +638,11 @@ def _render_airflow_quick_actions():
 
 def render_execution_panel():
     st.header("🚀 Execution")
+
+    if st.session_state.get("pending_execute") and st.session_state.pipeline_def is not None:
+        st.session_state.pending_execute = False
+        st.info("Auto-starting execution from Pipeline Editor...")
+        _execute_pipeline(st.session_state.pipeline_def)
 
     _render_platform_readiness()
     _render_airflow_quick_actions()
@@ -1192,21 +1346,285 @@ def _default_pipeline_yaml() -> str:
 
 
 
+def _find_data_files(dataset_path: str) -> list[str]:
+    """Find data files (.csv, .xlsx, .json, .parquet) inside a dataset directory."""
+    files: list[str] = []
+    for subdir in ["raw", "processed", ""]:
+        check_dir = os.path.join(dataset_path, subdir) if subdir else dataset_path
+        if os.path.isdir(check_dir):
+            for f in sorted(os.listdir(check_dir)):
+                if f.endswith((".csv", ".xlsx", ".xls", ".json", ".parquet")):
+                    files.append(os.path.join(check_dir, f))
+    return files
+
+
 # ── Main App ──
 def main():
     init_session_state()
     provider = render_sidebar()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Pipeline Editor", "🚀 Execution", "📂 Datasets", "📚 Services"])
+    st.title("🔧 ETL Pipeline Builder")
 
-    with tab1:
-        render_pipeline_editor(provider)
-    with tab2:
-        render_execution_panel()
-    with tab3:
-        render_dataset_explorer()
-    with tab4:
-        render_service_catalog()
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 1 — DATA SOURCE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    st.subheader("1️⃣  Choose Your Data")
+    tab_upload, tab_existing, tab_demo = st.tabs(["📤 Upload", "📂 Existing", "📦 Demo"])
+
+    with tab_upload:
+        up_file = st.file_uploader(
+            "Upload a dataset",
+            type=["csv", "xlsx", "xls", "json", "parquet"],
+            key="wiz_upload",
+        )
+        if up_file:
+            ds_name = st.text_input(
+                "Dataset name",
+                value=Path(up_file.name).stem.replace(" ", "_"),
+                key="wiz_ds_input",
+            )
+            if st.button("💾 Save & Use", key="wiz_save"):
+                _, _, cpath = _save_uploaded_dataset(up_file, ds_name)
+                st.session_state.wiz_data_path = cpath
+                st.success(f"Saved → `{cpath}`")
+
+    with tab_existing:
+        datasets = _scan_datasets()
+        if datasets:
+            ds_choice = st.selectbox(
+                "Dataset", [n for n, _ in datasets], key="wiz_existing_ds",
+            )
+            ds_path = dict(datasets)[ds_choice]
+            files = _find_data_files(ds_path)
+            if files:
+                sel_file = st.selectbox(
+                    "File", files, format_func=os.path.basename, key="wiz_existing_file",
+                )
+                cpath = "/app/data/" + os.path.relpath(sel_file, DATA_ROOT).replace("\\", "/")
+                st.session_state.wiz_data_path = cpath
+            else:
+                st.info(f"No data files in **{ds_choice}/**.")
+        else:
+            st.info("No datasets yet. Upload a file or pick a demo.")
+
+    with tab_demo:
+        demo_dir = os.path.join(DATA_ROOT, "demo")
+        demo_files = []
+        if os.path.isdir(demo_dir):
+            demo_files = [
+                f"/app/data/demo/{f}"
+                for f in sorted(os.listdir(demo_dir))
+                if f.endswith((".csv", ".xlsx", ".json", ".parquet"))
+            ]
+        if demo_files:
+            for df_path in demo_files:
+                if st.button(f"Use {os.path.basename(df_path)}", key=f"demo_{df_path}"):
+                    st.session_state.wiz_data_path = df_path
+                    st.rerun()
+        else:
+            st.info("No demo files. Run `make demo-data`.")
+
+    if st.session_state.get("wiz_data_path"):
+        st.info(f"📁 Selected: `{st.session_state.wiz_data_path}`")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 2 — DESCRIBE PIPELINE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    st.divider()
+    st.subheader("2️⃣  Describe What You Want")
+
+    data_path = st.session_state.get("wiz_data_path", "")
+    default_text = st.session_state.nl_request
+    if not default_text and data_path:
+        default_text = (
+            f"Create a pipeline that:\n"
+            f"1) Extracts data from {data_path}\n"
+            f"2) Runs data quality checks\n"
+            f"3) Cleans NaN values with fill_median\n"
+            f"4) Saves in parquet format"
+        )
+
+    prompt = st.text_area(
+        "What do you want to do with this data?",
+        value=default_text,
+        height=120,
+        placeholder=(
+            "Example: Load HR CSV from /app/data/demo/hr_sample.csv, "
+            "check quality, clean NaN with median, remove outliers, save as parquet."
+        ),
+    )
+    st.session_state.nl_request = prompt
+
+    if st.button("✨ Generate Pipeline", type="primary", use_container_width=True):
+        if not prompt.strip():
+            st.warning("Describe what you want the pipeline to do.")
+        else:
+            try:
+                with st.spinner("Generating pipeline…"):
+                    _generate_pipeline_from_text(prompt.strip(), provider)
+            except Exception as e:
+                st.session_state.generation_error = str(e)
+
+    if st.session_state.generation_error:
+        st.error(st.session_state.generation_error)
+
+    if st.session_state.messages:
+        with st.expander("💬 Chat History"):
+            for msg in st.session_state.messages[-6:]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 3 — REVIEW & EXECUTE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if st.session_state.pipeline_def:
+        st.divider()
+        st.subheader("3️⃣  Review & Execute")
+
+        pipeline = st.session_state.pipeline_def["pipeline"]
+        registry = load_service_registry()
+
+        # Horizontal flow visualization
+        flow_parts = []
+        for step in pipeline["steps"]:
+            svc = step["service"]
+            info = registry["services"].get(svc, {})
+            stype = info.get("type", "unknown")
+            icon = {"extract": "📥", "transform": "⚙️", "load": "📤"}.get(stype, "❓")
+            flow_parts.append(f"{icon} {info.get('name', svc)}")
+        st.markdown(" **→** ".join(flow_parts))
+        st.caption(f"Pipeline **{pipeline['name']}** — {len(pipeline['steps'])} steps")
+
+        for step in pipeline["steps"]:
+            svc = step["service"]
+            info = registry["services"].get(svc, {})
+            stype = info.get("type", "unknown")
+            icon = {"extract": "📥", "transform": "⚙️", "load": "📤"}.get(stype, "❓")
+            params = step.get("params", {})
+            pstr = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "defaults"
+            st.caption(f"{icon} `{step['id']}` — {pstr}")
+
+        if st.button("▶️ Execute Pipeline", type="primary", use_container_width=True):
+            _execute_pipeline(st.session_state.pipeline_def)
+
+        with st.expander("📝 Edit YAML"):
+            edited = st.text_area(
+                "YAML",
+                value=st.session_state.pipeline_yaml or _default_pipeline_yaml(),
+                height=300,
+                label_visibility="collapsed",
+            )
+            if st.button("✅ Apply YAML Changes"):
+                try:
+                    pdef = yaml.safe_load(edited)
+                    errors, warnings = validate_pipeline(pdef, load_service_registry())
+                    if errors:
+                        for err in errors:
+                            st.error(err)
+                    else:
+                        st.session_state.pipeline_def = pdef
+                        st.session_state.pipeline_yaml = edited
+                        for w in warnings:
+                            st.warning(w)
+                        st.success("Pipeline updated!")
+                        st.rerun()
+                except yaml.YAMLError as exc:
+                    st.error(f"Invalid YAML: {exc}")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # STEP 4 — RESULTS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if st.session_state.execution_result:
+        st.divider()
+        st.subheader("4️⃣  Results")
+
+        result = st.session_state.execution_result
+        if result.status == "completed":
+            st.success(f"Completed in {result.total_duration_sec:.2f}s")
+        else:
+            last_err = result.steps[-1].error_message if result.steps else "unknown"
+            st.error(f"Failed — {last_err}")
+
+        success_steps = sum(1 for s in result.steps if s.status == "success")
+        total_steps = len(result.steps)
+        total_kb = sum((s.data_size_bytes or 0) for s in result.steps) / 1024
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Steps", f"{success_steps}/{total_steps}")
+        m2.metric("Data Processed", f"{total_kb:.1f} KB")
+        m3.metric("Duration", f"{result.total_duration_sec:.2f}s")
+
+        steps_data = []
+        for s in result.steps:
+            steps_data.append({
+                "Step": s.step_id,
+                "Service": s.service,
+                "Status": "✅" if s.status == "success" else "❌",
+                "Duration": f"{s.duration_sec:.3f}s",
+                "Size (KB)": round(s.data_size_bytes / 1024, 1) if s.data_size_bytes else 0,
+            })
+        st.dataframe(pd.DataFrame(steps_data), use_container_width=True, hide_index=True)
+
+        # Data Preview
+        if st.session_state.step_previews:
+            st.markdown("##### 📊 Data Preview")
+            pkeys = list(st.session_state.step_previews.keys())
+            pstep = st.selectbox("Step output", pkeys, index=len(pkeys) - 1, key="result_preview")
+            if pstep and pstep in st.session_state.step_previews:
+                pdata = st.session_state.step_previews[pstep]
+                if isinstance(pdata, bytes) and len(pdata) > 0:
+                    try:
+                        reader = pa_ipc.open_stream(pdata)
+                        pdf = reader.read_all().to_pandas()
+                        st.caption(f"{pdf.shape[0]} rows × {pdf.shape[1]} columns")
+                        st.dataframe(pdf.head(50), use_container_width=True, hide_index=True)
+                        dl1, dl2, dl3 = st.columns(3)
+                        with dl1:
+                            st.download_button(
+                                "⬇️ CSV",
+                                pdf.to_csv(index=False).encode("utf-8"),
+                                f"{pstep}.csv", "text/csv",
+                                use_container_width=True,
+                            )
+                        with dl2:
+                            st.download_button(
+                                "⬇️ JSON",
+                                pdf.to_json(orient="records").encode("utf-8"),
+                                f"{pstep}.json", "application/json",
+                                use_container_width=True,
+                            )
+                        with dl3:
+                            st.download_button(
+                                "⬇️ Arrow IPC",
+                                pdata,
+                                f"{pstep}.arrow", "application/octet-stream",
+                                use_container_width=True,
+                            )
+                    except Exception as exc:
+                        st.warning(f"Cannot preview: {exc}")
+                else:
+                    st.info(f"Step '{pstep}' produced no Arrow IPC output.")
+
+        if st.session_state.execution_log:
+            with st.expander("📋 Execution Log"):
+                for entry in st.session_state.execution_log:
+                    st.text(entry)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ADVANCED TOOLS (collapsed by default)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    st.divider()
+    with st.expander("🔧 Advanced Tools"):
+        atab1, atab2, atab3, atab4 = st.tabs(
+            ["📂 Datasets", "📚 Services", "⚡ Airflow", "🩺 Health"]
+        )
+        with atab1:
+            render_dataset_explorer()
+        with atab2:
+            render_service_catalog()
+        with atab3:
+            _render_airflow_quick_actions()
+        with atab4:
+            _render_platform_readiness()
 
 
 if __name__ == "__main__":

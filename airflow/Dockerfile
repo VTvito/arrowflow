@@ -16,4 +16,5 @@ ENV PYTHONPATH="/opt/airflow/"
 
 # CMD per avvio servizi (db migrate ensures schema exists on first boot)
 # Creates admin user on first boot only (idempotent: skips if already exists)
-CMD ["bash", "-c", "airflow db migrate && (airflow users list | grep -q admin || airflow users create --username admin --password admin --firstname Admin --lastname ETL --role Admin --email admin@etl.local) && (airflow webserver & airflow scheduler)"]
+# Remove stale webserver pid to avoid false "already running" errors after container restarts.
+CMD ["bash", "-c", "rm -f /opt/airflow/airflow-webserver.pid && airflow db migrate && (airflow users list | grep -q admin || airflow users create --username admin --password admin --firstname Admin --lastname ETL --role Admin --email admin@etl.local) && (airflow scheduler & exec airflow webserver)"]

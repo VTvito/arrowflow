@@ -68,6 +68,8 @@ After execution, switch to the **Datasets** tab to browse output files, preview 
 
 ### New in Streamlit UX
 
+- **Dual prompt modes** in Pipeline Editor: `Guided` textarea and `Chat-style` conversational input
+- **OpenRouter model semaphore** in sidebar: one-click model reachability check before generation
 - **Platform Readiness** panel in Execution tab: live checks for Airflow, Streamlit, Prometheus, Grafana, including Airflow scheduler heartbeat status
 - **Quick Airflow Triggers** in Execution tab: trigger `hr_analytics_pipeline`, `ecommerce_pipeline`, or `weather_api_pipeline` without leaving Streamlit
 - **Execution insights**: successful steps, processed data volume, slowest step, and orchestration overhead (%)
@@ -91,7 +93,7 @@ Pipeline Compiler → executes steps in parallel via Preparator SDK
 Output: cleaned dataset saved in the requested format
 ```
 
-The AI agent supports both **OpenAI** (GPT-4o-mini) and **local HuggingFace** models. The YAML editor and validator work without any API key.
+The AI agent supports **OpenAI**, **OpenRouter**, and **local HuggingFace** models. The YAML editor and validator work without any API key.
 
 ---
 
@@ -297,9 +299,13 @@ Full walkthrough: [docs/extending.md](docs/extending.md)
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_PROVIDER` | `openai` | AI agent provider (`openai` or `local`) |
+| `LLM_PROVIDER` | `openai` | AI agent provider (`openai`, `openrouter`, or `local`) |
 | `OPENAI_API_KEY` | &mdash; | Required if `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
+| `OPENROUTER_API_KEY` | &mdash; | Required if `LLM_PROVIDER=openrouter` |
+| `OPENROUTER_MODEL` | `stepfun/step-3.5-flash:free` | Default OpenRouter model |
+| `OPENROUTER_FALLBACK_MODELS` | `arcee-ai/trinity-large-preview:free,...` | Comma-separated fallback models if selected model is unavailable |
+| `LOCAL_LLM_URL` | `http://localhost:5012` | Local text-completion service URL when running Streamlit on host |
 | `ETL_DATA_ROOT` | `/app/data` | Base directory for datasets and metadata |
 | `ALLOW_PRIVATE_API_URLS` | `false` | Allow private/local API targets in extract-api |
 
@@ -314,7 +320,7 @@ See [`.env.example`](.env.example) for all available variables including databas
 | Microservices | Python 3.9, Flask, Gunicorn |
 | Data Format | Apache Arrow IPC (streaming) |
 | Orchestration | Apache Airflow |
-| AI Agent | OpenAI / HuggingFace Transformers |
+| AI Agent | OpenAI / OpenRouter / HuggingFace Transformers |
 | UI | Streamlit |
 | Containers | Docker, Docker Compose (PostgreSQL 16, Airflow 2.10.4) |
 | Monitoring | Prometheus + Grafana |

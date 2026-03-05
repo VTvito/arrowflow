@@ -16,6 +16,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import pyarrow.ipc as pa_ipc
@@ -28,7 +29,7 @@ import yaml
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from ai_agent.llm_provider import create_llm_provider  # noqa: E402
+from ai_agent.llm_provider import DEFAULT_OPENROUTER_MODEL, create_llm_provider  # noqa: E402
 from ai_agent.pipeline_agent import PipelineAgent, validate_pipeline  # noqa: E402
 from ai_agent.pipeline_compiler import PipelineCompiler  # noqa: E402
 
@@ -68,6 +69,10 @@ def init_session_state():
         "messages": [],
         "pipeline_yaml": None,
         "pipeline_def": None,
+        "nl_request": "",
+        "generation_error": None,
+        "openrouter_model": DEFAULT_OPENROUTER_MODEL,
+        "openrouter_last_probe": None,
         "execution_result": None,
         "execution_log": [],
         "step_previews": {},  # step_id -> Arrow IPC bytes for data preview
@@ -80,8 +85,8 @@ def init_session_state():
 # ── Sidebar: Chat Interface ──
 def render_sidebar():
     with st.sidebar:
-        st.title("💬 Pipeline Chat")
-        st.caption("Describe the ETL pipeline you need in natural language.")
+        st.title("🤖 AI Settings")
+        st.caption("Choose your LLM provider and credentials for pipeline generation.")
 
         # LLM Provider selector
         provider = st.selectbox(
@@ -109,60 +114,160 @@ def render_sidebar():
             if or_key:
                 os.environ["OPENROUTER_API_KEY"] = or_key
 
+            # Curated list: recent + practical free models (as of Mar 2026), then common paid options.
+            model_options = [
+                "stepfun/step-3.5-flash:free",
+                "arcee-ai/trinity-large-preview:free",
+                "qwen/qwen3-next-80b-a3b-instruct:free",
+                "openai/gpt-oss-120b:free",
+                "qwen/qwen3-coder:free",
+                "mistralai/mistral-small-3.1-24b-instruct:free",
+                "google/gemma-3-12b-it:free",
+                "meta-llama/llama-3.1-8b-instruct:free",
+                "meta-llama/llama-3.3-70b-instruct",
+                "anthropic/claude-3.5-sonnet",
+                "openai/gpt-4o-mini",
+            ]
+            env_model = os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+            default_index = model_options.index(env_model) if env_model in model_options else 0
             or_model = st.selectbox(
                 "Model",
-                [
-                    "meta-llama/llama-3.1-8b-instruct:free",
-                    "google/gemma-2-9b-it:free",
-                    "mistralai/mistral-7b-instruct:free",
-                    "qwen/qwen-2.5-7b-instruct:free",
-                    "meta-llama/llama-3.3-70b-instruct",
-                    "anthropic/claude-3.5-sonnet",
-                    "openai/gpt-4o-mini",
-                ],
-                help="Models ending in `:free` require no credits.",
+                model_options,
+                index=default_index,
+                help="Models ending in `:free` require no credits. If unavailable, the app retries with fallback models.",
             )
             os.environ["OPENROUTER_MODEL"] = or_model
+            st.session_state.openrouter_model = or_model
+
+            with st.expander("Recommended free models (recent)"):
+                st.markdown(
+                    "- `stepfun/step-3.5-flash:free` (general fast)\n"
+                    "- `arcee-ai/trinity-large-preview:free` (strong reasoning)\n"
+                    "- `qwen/qwen3-next-80b-a3b-instruct:free` (quality/long context)\n"
+                    "- `openai/gpt-oss-120b:free` (balanced quality)\n"
+                    "- `qwen/qwen3-coder:free` (coding-oriented)"
+                )
+
+            if st.button("🟢 Test OpenRouter model", use_container_width=True):
+                if not or_key:
+                    st.session_state.openrouter_last_probe = ("error", "Set OpenRouter API key first.")
+                else:
+                    probe_ok, probe_msg = _probe_openrouter_model(or_key, or_model)
+                    st.session_state.openrouter_last_probe = ("ok" if probe_ok else "error", probe_msg)
+
+            if st.session_state.openrouter_last_probe:
+                level, message = st.session_state.openrouter_last_probe
+                if level == "ok":
+                    st.success(f"OpenRouter: {message}")
+                else:
+                    st.error(f"OpenRouter: {message}")
+
+        elif provider == "local":
+            local_url = st.text_input(
+                "Local LLM URL",
+                value=os.getenv("LOCAL_LLM_URL", "http://localhost:5012"),
+                help="Use localhost when Streamlit runs on your host. Use container DNS only inside Docker network.",
+            )
+            if local_url:
+                os.environ["LOCAL_LLM_URL"] = local_url
 
         st.divider()
+        st.caption("Generation prompt is now in the main *Pipeline Editor* tab for a wider writing area.")
+    return provider
 
-        # Chat messages
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
 
-        # Chat input
-        if user_input := st.chat_input("Describe your pipeline..."):
-            st.session_state.messages.append({"role": "user", "content": user_input})
+def _generate_pipeline_from_text(user_input: str, provider: str):
+    """Generate pipeline from natural language and persist success/error in session state."""
+    provider_kwargs = {}
+    if provider == "openrouter":
+        provider_kwargs["model"] = st.session_state.get("openrouter_model") or os.getenv(
+            "OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL
+        )
 
-            with st.chat_message("user"):
-                st.markdown(user_input)
+    llm = create_llm_provider(provider=provider, **provider_kwargs)
+    agent = PipelineAgent(llm)
+    pipeline_def = agent.generate_pipeline(user_input)
+    pipeline_yaml = yaml.dump(pipeline_def, default_flow_style=False, sort_keys=False)
 
-            with st.chat_message("assistant"):
-                with st.spinner("Generating pipeline..."):
-                    try:
-                        llm = create_llm_provider(provider=provider)
-                        agent = PipelineAgent(llm)
-                        pipeline_def = agent.generate_pipeline(user_input)
-                        pipeline_yaml = yaml.dump(pipeline_def, default_flow_style=False, sort_keys=False)
+    st.session_state.pipeline_yaml = pipeline_yaml
+    st.session_state.pipeline_def = pipeline_def
+    st.session_state.generation_error = None
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    st.session_state.messages.append({"role": "assistant", "content": agent.explain_pipeline(pipeline_def)})
 
-                        st.session_state.pipeline_yaml = pipeline_yaml
-                        st.session_state.pipeline_def = pipeline_def
-
-                        explanation = agent.explain_pipeline(pipeline_def)
-                        response = f"Pipeline generated successfully!\n\n{explanation}"
-
-                        st.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                    except Exception as e:
-                        error_msg = f"Error generating pipeline: {str(e)}"
-                        st.error(error_msg)
-                        st.session_state.messages.append({"role": "assistant", "content": error_msg})
+    return pipeline_def
 
 
 # ── Main: Pipeline Editor & Execution ──
-def render_pipeline_editor():
+def render_pipeline_editor(provider: str):
     st.header("📝 Pipeline Definition")
+
+    st.subheader("💡 Generate From Natural Language")
+    input_mode = st.radio("Input mode", ["Guided", "Chat-style"], horizontal=True)
+
+    if input_mode == "Chat-style":
+        st.caption("Chat-style flow in the main panel (similar to ChatGPT).")
+        history = st.session_state.messages[-8:]
+        for msg in history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        chat_req = st.chat_input("Describe the pipeline you want...")
+        if chat_req:
+            st.session_state.nl_request = chat_req
+            try:
+                with st.spinner("Generating pipeline..."):
+                    pipeline_def = _generate_pipeline_from_text(chat_req, provider)
+                name = pipeline_def["pipeline"]["name"]
+                steps = len(pipeline_def["pipeline"]["steps"])
+                st.success(f"Pipeline '{name}' generated successfully ({steps} steps).")
+                st.rerun()
+            except Exception as e:
+                st.session_state.generation_error = str(e)
+
+    else:
+        st.caption("Write your ETL request here. This area is larger than the sidebar for easier editing.")
+
+        st.session_state.nl_request = st.text_area(
+            "Describe your pipeline",
+            value=st.session_state.nl_request,
+            height=160,
+            placeholder=(
+                "Example: Load HR CSV from /app/data/demo/hr_sample.csv, run data quality checks, "
+                "clean NaNs with median on age and salary, remove outliers, and save to parquet."
+            ),
+        )
+
+        g1, g2 = st.columns([1, 1])
+        with g1:
+            if st.button("✨ Generate Pipeline", type="primary", use_container_width=True):
+                req = st.session_state.nl_request.strip()
+                if not req:
+                    st.session_state.generation_error = "Please enter a request before generating."
+                else:
+                    try:
+                        with st.spinner("Generating pipeline..."):
+                            pipeline_def = _generate_pipeline_from_text(req, provider)
+                        name = pipeline_def["pipeline"]["name"]
+                        steps = len(pipeline_def["pipeline"]["steps"])
+                        st.success(f"Pipeline '{name}' generated successfully ({steps} steps).")
+                    except Exception as e:
+                        st.session_state.generation_error = str(e)
+
+        with g2:
+            if st.button("🧹 Clear Request", use_container_width=True):
+                st.session_state.nl_request = ""
+
+    if st.session_state.generation_error:
+        st.error(f"Error generating pipeline: {st.session_state.generation_error}")
+        with st.expander("Troubleshooting"):
+            st.markdown(
+                "- If provider is `openrouter`, verify `OPENROUTER_API_KEY` is set and valid.\n"
+                "- Try a free model (`*:free`) first.\n"
+                "- Ensure the request describes extract + transform + load steps."
+            )
+
+    st.divider()
 
     col1, col2 = st.columns([1, 1])
 
@@ -234,7 +339,47 @@ def _probe_http(url: str, timeout: int = 3):
         return None, None, str(exc), None
 
 
-def _airflow_quick_trigger(dag_id: str, conf: dict | None = None):
+def _probe_openrouter_model(api_key: str, model: str, timeout: int = 20) -> tuple[bool, str]:
+    """Test that a selected OpenRouter model can accept chat completions.
+
+    Uses a tiny request to provide immediate feedback in UI.
+    """
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Ping"}],
+        "max_tokens": 1,
+        "temperature": 0,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    except Exception as exc:
+        return False, f"request failed: {exc}"
+
+    if resp.status_code == 200:
+        return True, f"model '{model}' is reachable"
+
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"error": {"message": resp.text[:300]}}
+
+    msg = body.get("error", {}).get("message", str(body))
+    if resp.status_code == 404 and "No endpoints found" in msg:
+        return False, f"model '{model}' currently unavailable: {msg}"
+    if resp.status_code == 401:
+        return False, "invalid API key"
+    if resp.status_code == 429:
+        return False, "rate limit reached"
+    return False, f"HTTP {resp.status_code}: {msg}"
+
+
+def _airflow_quick_trigger(dag_id: str, conf: Optional[dict] = None):
     url = f"{AIRFLOW_BASE_URL}/api/v1/dags/{dag_id}/dagRuns"
     payload = {"conf": conf or {}}
     try:
@@ -1050,12 +1195,12 @@ def _default_pipeline_yaml() -> str:
 # ── Main App ──
 def main():
     init_session_state()
-    render_sidebar()
+    provider = render_sidebar()
 
     tab1, tab2, tab3, tab4 = st.tabs(["📝 Pipeline Editor", "🚀 Execution", "📂 Datasets", "📚 Services"])
 
     with tab1:
-        render_pipeline_editor()
+        render_pipeline_editor(provider)
     with tab2:
         render_execution_panel()
     with tab3:

@@ -18,6 +18,25 @@ from abc import ABC, abstractmethod
 
 logger = logging.getLogger("ai_agent.llm_provider")
 
+DEFAULT_OPENROUTER_MODEL = "stepfun/step-3.5-flash:free"
+DEFAULT_OPENROUTER_FALLBACK_MODELS = [
+    "arcee-ai/trinity-large-preview:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-4o-mini",
+]
+
+
+def _default_local_llm_url() -> str:
+    """Choose sensible local LLM URL based on runtime context.
+
+    In Docker, services reach each other via container DNS.
+    On host runs (e.g., Streamlit launched from a venv), localhost is expected.
+    """
+    if os.path.exists("/.dockerenv"):
+        return "http://text-completion-llm-service:5012"
+    return "http://localhost:5012"
+
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
@@ -92,7 +111,7 @@ class OpenRouterProvider(LLMProvider):
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
 
-        self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+        self.model = model or os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
         api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not api_key:
             raise ValueError(
@@ -108,7 +127,16 @@ class OpenRouterProvider(LLMProvider):
                 "X-Title": "ArrowFlow ETL Platform",
             },
         )
+
+        raw_fallback = os.getenv("OPENROUTER_FALLBACK_MODELS", "")
+        configured_fallbacks = [m.strip() for m in raw_fallback.split(",") if m.strip()]
+        self.fallback_models = configured_fallbacks or DEFAULT_OPENROUTER_FALLBACK_MODELS
         logger.info(f"OpenRouter provider initialized with model: {self.model}")
+
+    @staticmethod
+    def _is_model_unavailable_error(exc: Exception) -> bool:
+        msg = str(exc)
+        return "No endpoints found for" in msg or "model not found" in msg.lower()
 
     def generate(self, prompt: str, system_prompt: str = "", temperature: float = 0.3, max_tokens: int = 2048) -> str:
         messages = []
@@ -116,13 +144,44 @@ class OpenRouterProvider(LLMProvider):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content
+        def _call_chat(model_name: str) -> str:
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return response.choices[0].message.content
+
+        try:
+            return _call_chat(self.model)
+        except Exception as exc:
+            if not self._is_model_unavailable_error(exc):
+                raise
+
+            tried = [self.model]
+            for candidate in self.fallback_models:
+                if candidate == self.model:
+                    continue
+                tried.append(candidate)
+                try:
+                    logger.warning(
+                        "OpenRouter model '%s' unavailable, retrying with fallback '%s'",
+                        self.model,
+                        candidate,
+                    )
+                    content = _call_chat(candidate)
+                    self.model = candidate
+                    return content
+                except Exception as fallback_exc:
+                    if not self._is_model_unavailable_error(fallback_exc):
+                        raise
+
+            raise ValueError(
+                "OpenRouter model unavailable. Tried: "
+                + ", ".join(tried)
+                + ". Select another model in Streamlit or set OPENROUTER_FALLBACK_MODELS."
+            ) from exc
 
     def name(self) -> str:
         return f"OpenRouter ({self.model})"
@@ -134,9 +193,7 @@ class LocalProvider(LLMProvider):
     def __init__(self, service_url: str = None):
         import requests
         self.session = requests.Session()
-        self.service_url = service_url or os.getenv(
-            "LOCAL_LLM_URL", "http://text-completion-llm-service:5012"
-        )
+        self.service_url = service_url or os.getenv("LOCAL_LLM_URL") or _default_local_llm_url()
         logger.info(f"Local LLM provider initialized with URL: {self.service_url}")
 
     def generate(self, prompt: str, system_prompt: str = "", temperature: float = 0.3, max_tokens: int = 2048) -> str:

@@ -368,7 +368,7 @@ pipeline:
 ### LLM Provider Configuration
 
 - `LLM_PROVIDER=openai` → uses OpenAI API (requires `OPENAI_API_KEY`)
-- `LLM_PROVIDER=openrouter` → uses OpenRouter API gateway (requires `OPENROUTER_API_KEY`). Supports 200+ models including free ones (e.g., `meta-llama/llama-3.1-8b-instruct:free`). OpenAI-compatible API via `openai` Python package with custom `base_url`. Get a free key at https://openrouter.ai/keys.
+- `LLM_PROVIDER=openrouter` → uses OpenRouter API gateway (requires `OPENROUTER_API_KEY`). Supports 200+ models including free ones (e.g., `stepfun/step-3.5-flash:free`). OpenAI-compatible API via `openai` Python package with custom `base_url`. Get a free key at https://openrouter.ai/keys.
 - `LLM_PROVIDER=local` → uses the local HuggingFace text-completion-llm-service
 - Factory: `create_llm_provider(provider=None)` reads env var if not specified
 
@@ -464,7 +464,7 @@ Single bridge network `etl-network`. Services reference each other by container 
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
 | `OPENROUTER_API_KEY` | — | OpenRouter API key (free at https://openrouter.ai/keys) |
-| `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct:free` | OpenRouter model identifier |
+| `OPENROUTER_MODEL` | `stepfun/step-3.5-flash:free` | OpenRouter model identifier |
 
 ---
 
